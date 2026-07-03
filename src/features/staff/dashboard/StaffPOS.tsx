@@ -1,0 +1,395 @@
+import { useState } from "react";
+import { Search, ShoppingCart, AlertTriangle, Banknote, Smartphone, Printer, Check } from "lucide-react";
+import { toast } from "sonner";
+import { Modal } from "../../../components";
+import { C } from "../../../constants/colors";
+import { allInventory } from "../../../constants/dummyData";
+import type { InventoryItem } from "../../../types/inventory";
+
+type PayMethod  = "Cash" | "GCash";
+type OrderType  = "Walk-in" | "Pickup";
+interface CartItem { id:number; name:string; price:number; qty:number }
+
+const EMOJI: Record<string,string> = {
+  Milk:"🥛", Cheese:"🧀", Butter:"🧈", Yogurt:"🍶", "Ice Cream":"🍨", Cream:"🍦",
+};
+
+const LOW_STOCK_THRESHOLD = 20;
+const TAX_RATE = 0.12;
+
+const money = (n: number) =>
+  n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ─── Receipt Modal ─────────────────────────────────────────────────────────────
+function ReceiptModal({ cart, total, tax, subtotal, payment, change, customer, onClose, onConfirm }:{
+  cart:CartItem[]; total:number; tax:number; subtotal:number;
+  payment:PayMethod; change:number; customer:string;
+  onClose:()=>void; onConfirm:()=>void;
+}) {
+  const now = new Date();
+  return (
+    <Modal open onClose={onClose} title="Receipt Preview" subtitle="Review before completing transaction" size="sm"
+      footer={<>
+        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
+          style={{border:`1px solid ${C.border}`,color:C.muted}}>Cancel</button>
+        <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90 flex items-center justify-center gap-2"
+          style={{backgroundColor:C.green}}>
+          <Check size={14}/> Complete Transaction
+        </button>
+      </>}>
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="text-center py-3">
+          <div className="font-bold text-lg" style={{color:C.navy,fontFamily:"Poppins,sans-serif"}}>Rosario Dairy</div>
+          <div className="text-xs" style={{color:C.muted}}>123 Dairy Road, Quezon City</div>
+          <div className="text-xs mt-1" style={{color:C.muted}}>
+            {now.toLocaleDateString("en-PH",{dateStyle:"full"})} · {now.toLocaleTimeString("en-PH",{timeStyle:"short"})}
+          </div>
+        </div>
+        {/* Customer */}
+        {customer && (
+          <div className="text-xs text-center" style={{color:C.muted}}>
+            Customer: <span className="font-semibold" style={{color:C.text}}>{customer}</span>
+          </div>
+        )}
+        {/* Items */}
+        <div className="space-y-1 py-3" style={{borderTop:`1px dashed ${C.border}`,borderBottom:`1px dashed ${C.border}`}}>
+          {cart.map(item=>(
+            <div key={item.id} className="flex justify-between text-xs">
+              <span style={{color:C.text}}>{item.name} × {item.qty}</span>
+              <span className="font-semibold" style={{color:C.text}}>₱{money(item.price*item.qty)}</span>
+            </div>
+          ))}
+        </div>
+        {/* Totals */}
+        <div className="space-y-1.5 text-xs">
+          {[["Subtotal",`₱${money(subtotal)}`],["Tax (12%)",`₱${money(tax)}`]].map(([l,v])=>(
+            <div key={l} className="flex justify-between">
+              <span style={{color:C.muted}}>{l}</span>
+              <span style={{color:C.text}}>{v}</span>
+            </div>
+          ))}
+          <div className="flex justify-between font-bold text-base pt-1" style={{borderTop:`1px solid ${C.border}`}}>
+            <span style={{color:C.text}}>TOTAL</span>
+            <span style={{color:C.blue}}>₱{money(total)}</span>
+          </div>
+          {payment==="Cash"&&change>0&&(
+            <div className="flex justify-between font-semibold pt-1" style={{color:C.green}}>
+              <span>Change</span><span>₱{money(change)}</span>
+            </div>
+          )}
+        </div>
+        {/* Payment */}
+        <div className="text-center text-xs py-2 rounded-xl"
+          style={{backgroundColor:C.green+"10",color:C.green}}>
+          Payment: <strong>{payment}</strong>
+        </div>
+        <div className="text-center text-xs" style={{color:C.muted}}>Thank you for your purchase!</div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Product Card ───────────────────────────────────────────────────────────────
+// Structured so the emoji block below can later be swapped for a product image
+// without touching the surrounding layout.
+function ProductCard({ prod, qtyInCart, onAdd }:{
+  prod: InventoryItem; qtyInCart: number; onAdd: () => void;
+}) {
+  const isLow = prod.stock > 0 && prod.stock <= LOW_STOCK_THRESHOLD;
+  const isOut = prod.stock === 0;
+
+  return (
+    <button
+      onClick={onAdd}
+      disabled={isOut}
+      className="relative flex flex-col bg-white rounded-2xl p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed"
+      style={{ border: `1px solid ${C.border}`, opacity: isOut ? 0.5 : 1, minHeight: 168 }}
+    >
+      {qtyInCart > 0 && (
+        <div className="absolute top-3 right-3">
+          <span
+            className="w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold shadow-sm"
+            style={{ backgroundColor: C.blue }}
+          >
+            {qtyInCart}
+          </span>
+        </div>
+      )}
+
+      {/* Icon slot — swap for <img> later without restructuring */}
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl mb-3"
+        style={{ backgroundColor: C.blue + "10" }}>
+        {EMOJI[prod.cat] ?? "📦"}
+      </div>
+
+      <div
+        className="font-semibold text-sm leading-snug mb-2 flex-1"
+        style={{
+          color: C.text,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
+      >
+        {prod.name}
+      </div>
+
+      <div className="font-bold text-base mb-1.5" style={{ color: C.blue, fontFamily: "Poppins, sans-serif" }}>
+        ₱{money(prod.price)}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs" style={{ color: isLow ? C.orange : C.muted }}>
+          {prod.stock} left
+        </span>
+        {isLow && (
+          <span
+            className="flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full"
+            style={{ backgroundColor: C.orange + "15", color: C.orange }}
+          >
+            <AlertTriangle size={10} /> Low
+          </span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ─── Main POS ─────────────────────────────────────────────────────────────────
+export function StaffPOS() {
+  const [cart,         setCart]       = useState<CartItem[]>([]);
+  const [category,     setCategory]   = useState("All");
+  const [search,       setSearch]     = useState("");
+  const [payMethod,    setPayMethod]  = useState<PayMethod>("Cash");
+  const [cashReceived, setCash]       = useState("");
+  const [customer,     setCustomer]   = useState("");
+  const [orderType,    setOrderType]  = useState<OrderType>("Walk-in");
+  const [receiptOpen,  setReceiptOpen]= useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+
+  const categories = ["All",...Array.from(new Set(allInventory.map(p=>p.cat)))];
+  const filtered = allInventory.filter(p=>
+    (category==="All"||p.cat===category) && p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const addToCart = (prod:InventoryItem) => {
+    setCart(prev=>{
+      const ex = prev.find(i=>i.id===prod.id);
+      if (ex) return prev.map(i=>i.id===prod.id?{...i,qty:i.qty+1}:i);
+      return [...prev,{id:prod.id,name:prod.name,price:prod.price,qty:1}];
+    });
+  };
+  const updateQty = (id:number,delta:number) =>
+    setCart(prev=>prev.map(i=>i.id===id?{...i,qty:i.qty+delta}:i).filter(i=>i.qty>0));
+
+  // Decimal-precise math — no rounding until final display formatting
+  const subtotal = cart.reduce((s,i)=>s + i.price * i.qty, 0);
+  const tax      = subtotal * TAX_RATE;
+  const total    = subtotal + tax;
+  const cashValue = parseFloat(cashReceived);
+  const change   = payMethod==="Cash" && cashReceived && !isNaN(cashValue)
+    ? Math.max(0, cashValue - total)
+    : 0;
+
+  const handleComplete = () => {
+    if (cart.length===0) { toast.error("Cart is empty."); return; }
+    setReceiptOpen(true);
+  };
+
+  const handleConfirmTransaction = () => {
+    setReceiptOpen(false);
+    setCart([]);
+    setCash("");
+    setCustomer("");
+    toast.success(`Transaction complete! ₱${money(total)} received.`);
+  };
+
+  return (
+    <div className="flex h-full w-full overflow-hidden" style={{ backgroundColor: "#F7F8FA" }}>
+      {/* ── Left: Products ── */}
+      <div className="flex-1 flex flex-col overflow-hidden p-6 gap-4 min-w-0">
+        {/* Search bar — pill shaped, taller, with focus animation */}
+        <div
+          className="flex items-center gap-3 bg-white rounded-full px-5 py-3.5 border transition-all duration-200"
+          style={{
+            borderColor: searchFocused ? C.blue : C.border,
+            boxShadow: searchFocused ? `0 0 0 3px ${C.blue}15` : "none",
+          }}
+        >
+          <Search size={16} style={{ color: searchFocused ? C.blue : C.muted }} />
+          <input
+            className="bg-transparent outline-none text-sm flex-1"
+            placeholder="Search products…"
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            style={{ color: C.text }}
+          />
+        </div>
+
+        {/* Category chips */}
+        <div className="flex gap-2.5 flex-wrap">
+          {categories.map(cat=>(
+            <button key={cat} onClick={()=>setCategory(cat)}
+              className="px-4 py-2 rounded-full text-xs font-medium transition-all duration-150 hover:opacity-80"
+              style={{backgroundColor:category===cat?C.blue:C.white,color:category===cat?"#fff":C.muted,
+                border:`1px solid ${category===cat?C.blue:C.border}`}}>
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        {/* Product grid — scrolls independently, scales columns to use full width */}
+        <div className="flex-1 overflow-y-auto -mx-1 px-1 py-1">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+            {filtered.map(prod=>{
+              const inCart = cart.find(i=>i.id===prod.id);
+              return (
+                <ProductCard
+                  key={prod.id}
+                  prod={prod}
+                  qtyInCart={inCart?.qty ?? 0}
+                  onAdd={() => addToCart(prod)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Right: Cart (fixed panel, does not scroll as a whole) ── */}
+      <div className="flex flex-col bg-white shadow-xl flex-shrink-0 h-full overflow-hidden"
+        style={{width:360,borderLeft:`1px solid ${C.border}`}}>
+
+        {/* Header */}
+        <div className="px-5 py-4 flex items-center justify-between flex-shrink-0" style={{borderBottom:`1px solid ${C.border}`}}>
+          <h3 className="font-bold text-base" style={{color:C.text,fontFamily:"Poppins,sans-serif"}}>Current Order</h3>
+          {cart.length>0&&(
+            <button onClick={()=>setCart([])} className="text-xs font-medium hover:opacity-70" style={{color:C.red}}>
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Section: Customer Information */}
+        <div className="px-5 py-4 space-y-3 flex-shrink-0" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
+            Customer Information
+          </div>
+          <input className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none border"
+            placeholder="Customer name (optional)" value={customer}
+            onChange={e=>setCustomer(e.target.value)} style={{borderColor:C.border,color:C.text}}/>
+          <div className="flex gap-2">
+            {(["Walk-in","Pickup"] as OrderType[]).map(t=>(
+              <button key={t} onClick={()=>setOrderType(t)}
+                className="flex-1 py-2 rounded-xl text-xs font-medium transition-all"
+                style={{backgroundColor:orderType===t?C.navy:"transparent",color:orderType===t?"#fff":C.muted,
+                  border:`1px solid ${orderType===t?C.navy:C.border}`}}>{t}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Section: Order Items — the only scrollable part of the panel */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+          <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.muted }}>
+            Order Items
+          </div>
+          {cart.length===0?(
+            <div className="flex flex-col items-center justify-center h-full gap-3 py-12" style={{color:C.muted}}>
+              <ShoppingCart size={40} style={{opacity:0.2}}/>
+              <div className="text-center">
+                <p className="text-sm font-semibold" style={{ color: C.text }}>No items yet</p>
+                <p className="text-xs mt-1" style={{ color: C.muted }}>Select products to begin an order.</p>
+              </div>
+            </div>
+          ):(
+            <div className="space-y-3">
+              {cart.map(item=>(
+                <div key={item.id} className="flex items-center gap-3 pb-3" style={{borderBottom:`1px solid ${C.border}`}}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold truncate" style={{color:C.text}}>{item.name}</div>
+                    <div className="text-xs mt-0.5" style={{color:C.muted}}>₱{money(item.price)} × {item.qty}</div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={()=>updateQty(item.id,-1)}
+                      className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-gray-100 text-sm font-bold"
+                      style={{border:`1px solid ${C.border}`,color:C.muted}}>−</button>
+                    <span className="w-5 text-center text-xs font-bold" style={{color:C.text}}>{item.qty}</span>
+                    <button onClick={()=>updateQty(item.id,1)}
+                      className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-blue-50 text-sm font-bold"
+                      style={{border:`1px solid ${C.border}`,color:C.blue}}>+</button>
+                  </div>
+                  <div className="text-xs font-bold w-16 text-right" style={{color:C.text}}>
+                    ₱{money(item.price*item.qty)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Section: Totals */}
+        <div className="px-5 py-4 space-y-2 flex-shrink-0" style={{borderTop:`1px solid ${C.border}`}}>
+          {[["Subtotal",`₱${money(subtotal)}`],["Tax (12%)",`₱${money(tax)}`]].map(([l,v])=>(
+            <div key={l} className="flex justify-between text-xs" style={{color:C.muted}}>
+              <span>{l}</span><span>{v}</span>
+            </div>
+          ))}
+          <div className="flex justify-between font-bold text-base pt-2"
+            style={{borderTop:`1px solid ${C.border}`,color:C.text}}>
+            <span>Total</span>
+            <span style={{color:C.blue}}>₱{money(total)}</span>
+          </div>
+        </div>
+
+        {/* Section: Payment */}
+        <div className="px-5 pb-5 pt-1 space-y-3 flex-shrink-0">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
+            Payment Method
+          </div>
+          <div className="flex gap-2">
+            {(["Cash","GCash"] as PayMethod[]).map(m=>(
+              <button key={m} onClick={()=>setPayMethod(m)}
+                className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+                style={{backgroundColor:payMethod===m?C.navy:"transparent",color:payMethod===m?"#fff":C.muted,
+                  border:`1px solid ${payMethod===m?C.navy:C.border}`}}>
+                {m==="Cash"?<Banknote size={12}/>:<Smartphone size={12}/>}{m}
+              </button>
+            ))}
+          </div>
+
+          {payMethod==="Cash"&&(
+            <div className="space-y-2">
+              <input type="number" step="0.01" placeholder="Cash received" value={cashReceived}
+                onChange={e=>setCash(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none border"
+                style={{borderColor:C.border,color:C.text}}/>
+              {cashReceived&&(
+                <div className="flex justify-between text-xs px-1">
+                  <span style={{color:C.muted}}>Change</span>
+                  <span className="font-bold" style={{color:C.green}}>₱{money(change)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <button onClick={handleComplete}
+            className="w-full py-3.5 rounded-2xl text-white font-bold text-sm transition-all hover:opacity-90 flex items-center justify-center gap-2"
+            style={{backgroundColor:cart.length>0?C.blue:C.border}}>
+            <Printer size={14}/> Review & Complete
+          </button>
+        </div>
+      </div>
+
+      {/* Receipt Preview Modal */}
+      {receiptOpen&&(
+        <ReceiptModal cart={cart} total={total} tax={tax} subtotal={subtotal}
+          payment={payMethod} change={change} customer={customer || "Walk-in"}
+          onClose={()=>setReceiptOpen(false)} onConfirm={handleConfirmTransaction}/>
+      )}
+    </div>
+  );
+}
