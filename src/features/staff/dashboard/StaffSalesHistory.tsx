@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
-import { BarChart2, Search, Printer } from "lucide-react";
-import { Card, DataTable, Btn } from "../../../components";
+import { Search, Printer } from "lucide-react";
+import { Card, EnhancedTable } from "../../../components";
+import type { Column } from "../../../components";
 import { C } from "../../../constants/colors";
 import { salesService } from "../../../services/sales.service";
+
+type Sale = ReturnType<typeof salesService.getAll>[number];
 
 const PAYMENT_STYLE: Record<string, { bg: string; color: string }> = {
   Cash:  { bg: C.green  + "15", color: C.green  },
@@ -35,6 +38,36 @@ export function StaffSalesHistory() {
     });
   }, [records, search, payment, date]);
 
+  const columns: Column<Sale>[] = [
+    { key:"receipt", header:"Receipt #", width:"18%",
+      render: s => <span className="font-mono text-xs" style={{ color: C.muted }}>{s.receipt}</span> },
+    { key:"customer", header:"Customer", width:"22%",
+      render: s => <span className="font-medium text-sm" style={{ color: C.text }}>{s.customer}</span> },
+    { key:"date", header:"Date", align:"center", width:"16%",
+      render: s => <span className="text-xs" style={{ color: C.muted }}>{s.date}</span> },
+    { key:"payment", header:"Payment", align:"center", width:"16%",
+      render: s => {
+        const pm = PAYMENT_STYLE[s.payment] ?? { bg: "#F5F5F5", color: C.muted };
+        return (
+          <div className="flex justify-center">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: pm.bg, color: pm.color }}>
+              {s.payment}
+            </span>
+          </div>
+        );
+      } },
+    { key:"total", header:"Total", align:"center", width:"14%",
+      render: s => <span className="font-semibold text-sm" style={{ color: C.text }}>₱{s.total.toLocaleString()}</span> },
+    { key:"receipt_action", header:"Receipt", align:"center", width:"14%",
+      render: () => (
+        <div className="flex justify-center">
+          <button className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" style={{ color: C.muted }}>
+            <Printer size={13} />
+          </button>
+        </div>
+      ) },
+  ];
+
   return (
     <div className="p-6 flex flex-col h-full gap-4 overflow-hidden">
       {/* Header - fixed */}
@@ -61,10 +94,10 @@ export function StaffSalesHistory() {
         ))}
       </div>
 
-      {/* Table card - grows to fill remaining space, scrolls internally */}
-      <Card className="p-5 flex flex-col flex-1 min-h-0">
-        {/* Filter bar - fixed inside card */}
-        <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
+      {/* Table card - no internal scroll, table paginates instead */}
+      <Card className="p-5">
+        {/* Filter bar */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <div
             className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border w-72"
             style={{ borderColor: C.border }}
@@ -103,43 +136,18 @@ export function StaffSalesHistory() {
           </span>
         </div>
 
-        {/* Scrollable table area */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <DataTable
-            headers={["Receipt #", "Customer", "Date", "Payment", "Total", "Receipt"]}
-            rows={filteredRecords.map(s => {
-              const pm = PAYMENT_STYLE[s.payment] ?? { bg: "#F5F5F5", color: C.muted };
-              return [
-                <span key="r" className="font-mono text-xs" style={{ color: C.muted }}>{s.receipt}</span>,
-                <span key="c" className="font-medium text-sm" style={{ color: C.text }}>{s.customer}</span>,
-                <span key="d" className="text-xs" style={{ color: C.muted }}>{s.date}</span>,
-                <span
-                  key="p"
-                  className="text-xs px-2 py-0.5 rounded-full font-medium"
-                  style={{ backgroundColor: pm.bg, color: pm.color }}
-                >
-                  {s.payment}
-                </span>,
-                <span key="t" className="font-semibold text-sm" style={{ color: C.text }}>
-                  ₱{s.total.toLocaleString()}
-                </span>,
-                <button
-                  key="pr"
-                  className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                  style={{ color: C.muted }}
-                >
-                  <Printer size={13} />
-                </button>,
-              ];
-            })}
-          />
-
-          {filteredRecords.length === 0 && (
-            <div className="text-center py-8 text-sm" style={{ color: C.muted }}>
-              No transactions match your filters.
-            </div>
-          )}
-        </div>
+        {/* Table with real pagination, no internal scroll */}
+        <EnhancedTable
+          columns={columns}
+          data={filteredRecords}
+          rowKey={s => s.receipt}
+          pageSize={4}
+          searchable={false}
+          showExport={false}
+          showCount={false}
+          emptyTitle="No transactions found"
+          emptyDesc="No transactions match your filters."
+        />
       </Card>
     </div>
   );

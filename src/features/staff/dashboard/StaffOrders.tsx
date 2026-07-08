@@ -43,18 +43,19 @@ export function StaffOrders() {
   }, [orders, search, statusFilter]);
 
   const columns: Column<Order>[] = [
-    { key:"id",       header:"Order ID",
+    { key:"id",       header:"Order ID", width:"16%",
       render:r=><span className="font-mono text-xs" style={{color:C.muted}}>{r.id}</span> },
-    { key:"customer", header:"Customer", sortKey:r=>r.customer,
+    { key:"customer", header:"Customer", width:"22%", sortKey:r=>r.customer,
       render:r=><span className="font-semibold text-sm" style={{color:C.text}}>{r.customer}</span> },
-    { key:"status",   header:"Status",  render:r=><StatusBadge status={r.status}/> },
-    { key:"pickup",   header:"Pickup Time",
+    { key:"status",   header:"Status", align:"center", width:"16%",
+      render:r=><div className="flex justify-center"><StatusBadge status={r.status}/></div> },
+    { key:"pickup",   header:"Pickup Time", align:"center", width:"18%",
       render:r=><span className="text-xs" style={{color:C.muted}}>{r.pickup}</span> },
-    { key:"total",    header:"Total", align:"right", sortKey:r=>r.total,
+    { key:"total",    header:"Total", align:"center", width:"16%", sortKey:r=>r.total,
       render:r=><span className="font-bold text-sm" style={{color:C.text}}>₱{r.total.toLocaleString()}</span> },
-    { key:"actions",  header:"",
+    { key:"actions",  header:"Actions", align:"center", width:"12%",
       render:r=>(
-        <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
+        <div className="flex gap-1 justify-center" onClick={e=>e.stopPropagation()}>
           <button onClick={()=>openView(r)} className="p-1.5 rounded-lg hover:bg-blue-50" style={{color:C.blue}}>
             <Eye size={13}/>
           </button>
@@ -72,10 +73,10 @@ export function StaffOrders() {
         <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={()=>setNewOpen(true)}>New Order</Btn>
       </div>
 
-      {/* Single card: search + filter + count fixed at top, table scrolls below */}
-      <Card className="p-5 flex flex-col flex-1 min-h-0">
-        {/* Search + Filter + Count - fixed inside card */}
-        <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
+      {/* Single card: search + filter + count + table, all fixed, table paginates instead of scrolling */}
+      <Card className="p-5">
+        {/* Search + Filter + Count */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <div
             className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border w-72"
             style={{ borderColor: C.border }}
@@ -107,25 +108,19 @@ export function StaffOrders() {
           </span>
         </div>
 
-        {/* Scrollable table area - all rows render, no pagination */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <EnhancedTable
-            columns={columns}
-            data={filteredOrders}
-            rowKey={r=>r.id}
-            pageSize={filteredOrders.length || 1}
-            searchable={false}
-            showExport={false}
-            showCount={false}
-            onRowClick={openView}
-          />
-        </div>
-
-        {filteredOrders.length === 0 && (
-          <div className="text-center py-8 text-sm" style={{ color: C.muted }}>
-            No orders match your filters.
-          </div>
-        )}
+        {/* Table with real pagination, no internal scroll */}
+        <EnhancedTable
+          columns={columns}
+          data={filteredOrders}
+          rowKey={r=>r.id}
+          pageSize={6}
+          searchable={false}
+          showExport={false}
+          showCount={false}
+          onRowClick={openView}
+          emptyTitle="No orders found"
+          emptyDesc="No orders match your filters."
+        />
       </Card>
 
       {/* View + Update Drawer */}

@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, Search } from "lucide-react";
-import { Card, DataTable, StatusBadge } from "../../../components";
+import { Card, EnhancedTable, StatusBadge } from "../../../components";
+import type { Column } from "../../../components";
 import { C } from "../../../constants/colors";
 import { inventoryService } from "../../../services/inventory.service";
+
+type InventoryItem = ReturnType<typeof inventoryService.getAll>[number];
 
 export function StaffInventory() {
   const items = inventoryService.getAll();
@@ -26,13 +29,34 @@ export function StaffInventory() {
     });
   }, [items, search, category, lowStockOnly]);
 
+  const columns: Column<InventoryItem>[] = [
+    { key:"name", header:"Product", width:"28%",
+      render: p => <span className="font-medium text-sm" style={{ color: C.text }}>{p.name}</span> },
+    { key:"cat", header:"Category", align:"center", width:"18%",
+      render: p => (
+        <div className="flex justify-center">
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: C.blue + "15", color: C.blue }}>
+            {p.cat}
+          </span>
+        </div>
+      ) },
+    { key:"stock", header:"Available Qty", align:"center", width:"18%",
+      render: p => (
+        <div className="flex items-center justify-center gap-2">
+          <span className="font-medium text-sm" style={{ color: p.low ? C.red : C.text }}>{p.stock}</span>
+          {p.low && <AlertTriangle size={11} style={{ color: C.orange }} />}
+        </div>
+      ) },
+    { key:"expiry", header:"Expiry Date", align:"center", width:"18%",
+      render: p => <span className="text-xs" style={{ color: C.muted }}>{p.expiry}</span> },
+    { key:"status", header:"Status", align:"center", width:"18%",
+      render: p => <div className="flex justify-center"><StatusBadge status={p.low ? "Low" : "Active"} /></div> },
+  ];
+
   return (
     <div className="p-6 flex flex-col h-full gap-4 overflow-hidden">
       {/* Header + notice - fixed */}
       <div className="flex-shrink-0 space-y-4">
-        <div>
-        </div>
-
         {/* Read-only notice */}
         <div
           className="p-3 rounded-xl flex items-center gap-3 text-sm"
@@ -43,10 +67,10 @@ export function StaffInventory() {
         </div>
       </div>
 
-      {/* Single card: filter bar fixed at top, table scrolls below */}
-      <Card className="p-5 flex flex-col flex-1 min-h-0">
-        {/* Filter bar - fixed inside card */}
-        <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
+      {/* Single card: filter bar + table, no internal scroll, table paginates instead */}
+      <Card className="p-5">
+        {/* Filter bar */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           {/* Search */}
           <div
             className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border w-72"
@@ -94,34 +118,18 @@ export function StaffInventory() {
           </span>
         </div>
 
-        {/* Scrollable table area */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <DataTable
-            headers={["Product", "Category", "Available Qty", "Expiry Date", "Status"]}
-            rows={filteredItems.map(p => [
-              <span key="name" className="font-medium text-sm" style={{ color: C.text }}>{p.name}</span>,
-              <span
-                key="cat"
-                className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ backgroundColor: C.blue + "15", color: C.blue }}
-              >
-                {p.cat}
-              </span>,
-              <div key="stock" className="flex items-center gap-2">
-                <span className="font-medium text-sm" style={{ color: p.low ? C.red : C.text }}>{p.stock}</span>
-                {p.low && <AlertTriangle size={11} style={{ color: C.orange }} />}
-              </div>,
-              <span key="exp" className="text-xs" style={{ color: C.muted }}>{p.expiry}</span>,
-              <StatusBadge key="st" status={p.low ? "Low" : "Active"} />,
-            ])}
-          />
-
-          {filteredItems.length === 0 && (
-            <div className="text-center py-8 text-sm" style={{ color: C.muted }}>
-              No products match your filters.
-            </div>
-          )}
-        </div>
+        {/* Table with real pagination, no internal scroll */}
+        <EnhancedTable
+          columns={columns}
+          data={filteredItems}
+          rowKey={p => p.id}
+          pageSize={7}
+          searchable={false}
+          showExport={false}
+          showCount={false}
+          emptyTitle="No products found"
+          emptyDesc="No products match your filters."
+        />
       </Card>
     </div>
   );
