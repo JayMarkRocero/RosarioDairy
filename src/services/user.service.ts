@@ -19,6 +19,8 @@ export const userService = {
       role: toDisplayRole(u.role),
       status: u.is_active ? "Active" : "Inactive",
       last: "—", // backend doesn't currently track last login
+      phone: u.phone_number ?? "—", // blank until backend list endpoint includes it
+      address: u.address ?? "—",    // blank until backend list endpoint includes it
     }));
   },
 
@@ -43,13 +45,22 @@ export const userService = {
 
   updateUser: async (
     userId: number,
-    input: { email: string; role: "Administrator" | "Staff"; firstName?: string; lastName?: string }
+    input: {
+      email: string;
+      role: "Administrator" | "Staff";
+      firstName?: string;
+      lastName?: string;
+      phoneNumber?: string;
+      address?: string;
+    }
   ): Promise<void> => {
     const payload: UpdateUserPayload = {
       email: input.email,
       role: toBackendRole(input.role),
       first_name: input.firstName,
       last_name: input.lastName,
+      phone_number: input.phoneNumber,
+      address: input.address,
     };
     await api.updateUser(userId, payload);
   },

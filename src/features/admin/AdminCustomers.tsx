@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Plus, Eye, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, Btn, Modal, Drawer, ConfirmDialog, EnhancedTable, StatusBadge } from "../../components";
@@ -6,6 +6,7 @@ import type { Column } from "../../components";
 import { C } from "../../constants/colors";
 import { customersService } from "../../services/customers.service";
 import type { Customer } from "../../types/customer";
+import { isValidPhoneNumber, PHONE_FORMAT_HINT } from "../../lib/validators";
 
 const inputClass = "w-full px-3.5 py-2.5 rounded-xl text-sm outline-none border transition-colors focus:border-blue-400";
 const inputStyle = { borderColor:C.border, color:C.text, backgroundColor:"#F8FAFC" };
@@ -24,8 +25,40 @@ function Avatar({ name, size=8 }: { name:string; size?:number }) {
   );
 }
 
+function CustomerForm({ form, onChange }: { form: FormState; onChange: (f: FormState) => void }) {
+  return (
+    <div className="space-y-4">
+      {([["Full Name","name","Maria Santos"],["Phone Number","phone","09171234567"],["Email Address","email","customer@email.com"]] as [string,keyof FormState,string][]).map(([l,k,p])=>(
+        <div key={k}>
+          <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>{l}</label>
+          <input className={inputClass} style={inputStyle} value={form[k]} placeholder={p}
+            maxLength={k === "phone" ? 11 : undefined}
+            onChange={e=>{
+              const val = k === "phone" ? e.target.value.replace(/\D/g, "") : e.target.value;
+              onChange({...form,[k]:val});
+            }}/>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function AdminCustomers() {
-  const list = customersService.getAll();
+  const [list, setList] = useState<Customer[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+
+  const loadCustomers = () => {
+    setListLoading(true);
+    customersService.getAll()
+      .then(setList)
+      .catch(() => toast.error("Failed to load customers."))
+      .finally(() => setListLoading(false));
+  };
+
+  useEffect(() => {
+    loadCustomers();
+  }, []);
+
   const [segFilter,  setSegFilter]  = useState("All");
   const [addOpen,    setAddOpen]    = useState(false);
   const [editOpen,   setEditOpen]   = useState(false);
@@ -46,27 +79,45 @@ export function AdminCustomers() {
 
   const save = (mode:"add"|"edit") => {
     if (!form.name||!form.phone) { toast.error("Name and phone are required."); return; }
+    if (!isValidPhoneNumber(form.phone)) { toast.error(PHONE_FORMAT_HINT); return; }
     setLoading(true);
-    setTimeout(()=>{ setLoading(false); mode==="add"?setAddOpen(false):setEditOpen(false);
-      setForm(EMPTY); toast.success(mode==="add"?"Customer added!":"Customer updated!"); }, 700);
+
+    if (mode === "add") {
+      customersService.createCustomer(form)
+        .then(() => {
+          toast.success("Customer added!");
+          setAddOpen(false);
+          setForm(EMPTY);
+          loadCustomers();
+        })
+        .catch((err: Error) => toast.error(err.message))
+        .finally(() => setLoading(false));
+    } else {
+      if (!selected) { setLoading(false); return; }
+      customersService.updateCustomer(selected.id, form)
+        .then(() => {
+          toast.success("Customer updated!");
+          setEditOpen(false);
+          setForm(EMPTY);
+          loadCustomers();
+        })
+        .catch((err: Error) => toast.error(err.message))
+        .finally(() => setLoading(false));
+    }
   };
 
   const handleDelete = () => {
+    if (!selected) return;
     setLoading(true);
-    setTimeout(()=>{ setLoading(false); setDeleteOpen(false); toast.success(`${selected?.name} removed.`); }, 600);
+    customersService.deleteCustomer(selected.id)
+      .then(() => {
+        toast.success(`${selected.name} removed.`);
+        setDeleteOpen(false);
+        loadCustomers();
+      })
+      .catch((err: Error) => toast.error(err.message || "Cannot delete a customer with existing orders."))
+      .finally(() => setLoading(false));
   };
-
-  const CustomerForm = () => (
-    <div className="space-y-4">
-      {([["Full Name","name","Maria Santos"],["Phone Number","phone","09171234567"],["Email Address","email","customer@email.com"]] as [string,keyof FormState,string][]).map(([l,k,p])=>(
-        <div key={k}>
-          <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>{l}</label>
-          <input className={inputClass} style={inputStyle} value={form[k]} placeholder={p}
-            onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/>
-        </div>
-      ))}
-    </div>
-  );
 
   const columns: Column<Customer>[] = [
     { key:"name", header:"Customer", width:"28%", sortKey:r=>r.name,
@@ -98,7 +149,7 @@ export function AdminCustomers() {
   ];
 
   return (
-    <div className="flex flex-col min-h-full gap-4 p-4 sm:p-6">
+    <div className="flex flex-col min-h-full gap-4 p-4 sm:p-6 max-w-[1400px] mx-auto w-full">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-shrink-0">
         <h2 className="text-lg font-bold" style={{color:C.muted}}>
           Manage customer accounts and purchase history
@@ -108,21 +159,23 @@ export function AdminCustomers() {
         </Btn>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 flex-shrink-0">
-        {[
-          {l:"Total Customers", v:list.length,                                              color:C.blue  },
-          {l:"Total Revenue",   v:`₱${list.reduce((a,c)=>a+c.total,0).toLocaleString()}`, color:C.green },
-          {l:"Avg. Order Value",v:`₱${Math.round(list.reduce((a,c)=>a+c.total,0)/list.reduce((a,c)=>a+c.orders,0)).toLocaleString()}`, color:C.navy },
-        ].map(s=>(
-          <Card key={s.l} className="p-4 flex items-center gap-3">
-            <div className="w-2 h-10 rounded-full flex-shrink-0" style={{backgroundColor:s.color}}/>
-            <div className="min-w-0">
-              <div className="font-bold text-lg truncate" style={{color:s.color,fontFamily:"Poppins,sans-serif"}}>{s.v}</div>
-              <div className="text-xs truncate" style={{color:C.muted}}>{s.l}</div>
-            </div>
-          </Card>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-shrink-0">
+  {[
+    {l:"Total Customers", v:String(list.length),                                              color:C.blue  },
+    {l:"Total Revenue",   v:`₱${list.reduce((a,c)=>a+c.total,0).toLocaleString()}`, color:C.green },
+    {l:"Avg. Order Value",v: list.reduce((a,c)=>a+c.orders,0) > 0
+        ? `₱${Math.round(list.reduce((a,c)=>a+c.total,0)/list.reduce((a,c)=>a+c.orders,0)).toLocaleString()}`
+        : "₱0", color:C.navy },
+  ].map(s=>(
+    <Card key={s.l} className="p-3.5 flex items-center gap-2.5">
+      <div className="w-1.5 h-9 rounded-full flex-shrink-0" style={{backgroundColor:s.color}}/>
+      <div className="min-w-0">
+        <div className="font-bold text-lg truncate leading-tight" style={{color:s.color,fontFamily:"Poppins,sans-serif"}}>{s.v}</div>
+        <div className="text-xs truncate" style={{color:C.muted}}>{s.l}</div>
       </div>
+    </Card>
+  ))}
+</div>
 
       <Card className="p-5">
         <EnhancedTable
@@ -134,8 +187,8 @@ export function AdminCustomers() {
           searchKeys={r=>[r.name,r.email,r.phone]}
           searchPlaceholder="Search customers…"
           onRowClick={openView}
-          emptyTitle="No customers yet"
-          emptyDesc="Add your first customer to get started."
+          emptyTitle={listLoading ? "Loading customers…" : "No customers yet"}
+          emptyDesc={listLoading ? "Fetching data from the server." : "Add your first customer to get started."}
           showExport={false}
           extraControls={
             <select
@@ -153,13 +206,13 @@ export function AdminCustomers() {
       <Modal open={addOpen} onClose={()=>setAddOpen(false)} title="Add Customer" size="sm"
         footer={<><Btn variant="secondary" onClick={()=>setAddOpen(false)}>Cancel</Btn>
           <Btn variant="primary" onClick={()=>save("add")} disabled={loading}>{loading?"Saving…":"Add Customer"}</Btn></>}>
-        <CustomerForm/>
+        <CustomerForm form={form} onChange={setForm}/>
       </Modal>
 
       <Modal open={editOpen} onClose={()=>setEditOpen(false)} title="Edit Customer" subtitle={selected?.name} size="sm"
         footer={<><Btn variant="secondary" onClick={()=>setEditOpen(false)}>Cancel</Btn>
           <Btn variant="primary" onClick={()=>save("edit")} disabled={loading}>{loading?"Saving…":"Save Changes"}</Btn></>}>
-        <CustomerForm/>
+        <CustomerForm form={form} onChange={setForm}/>
       </Modal>
 
       <Drawer open={viewOpen} onClose={()=>setViewOpen(false)} title="Customer Profile"

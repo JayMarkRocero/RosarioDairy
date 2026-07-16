@@ -108,6 +108,8 @@ export interface DjangoUserListItem {
   deactivation_reason: string;
   first_name: string;
   last_name: string;
+  phone_number?: string;
+  address?: string;
 }
 
 export interface RegisterUserPayload {
@@ -136,12 +138,64 @@ export interface ResetPasswordPayload {
   new_password: string;
 }
 
+export interface DjangoCustomer {
+  id: number;
+  name: string;
+  contact_number: string | null;
+  email: string | null;
+  address: string | null;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DjangoOrderItem {
+  id: number;
+  product: DjangoProduct;
+  quantity: number;
+  unit_price: string;
+  subtotal: string;
+}
+
+export interface DjangoOrder {
+  id: number;
+  customer: DjangoCustomer;
+  handled_by: CurrentUser;
+  status: "placed" | "confirmed" | "fulfilled" | "cancelled";
+  transaction: number | null;
+  items: DjangoOrderItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCustomerPayload {
+  name: string;
+  contact_number?: string | null;
+  email?: string | null;
+  address?: string | null;
+}
+
+export type UpdateCustomerPayload = Partial<CreateCustomerPayload>;
+
+// ─── Error parsing helper ──────────────────────────────────────────────────────
+async function throwParsedError(res: Response): Promise<never> {
+  const errText = await res.text();
+  let message = `Request failed (${res.status})`;
+  try {
+    const parsed = JSON.parse(errText);
+    message = parsed.error || parsed.detail || Object.values(parsed).flat().join(" ") || message;
+  } catch {
+    // errText wasn't valid JSON — keep the generic message
+  }
+  throw new Error(message);
+}
+
 // ─── Core fetch helpers ───────────────────────────────────────────────────────
 async function apiFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
-  if (!res.ok) throw new Error(`API error ${res.status} on ${path}`);
+  if (!res.ok) return throwParsedError(res);
   return res.json();
 }
 
@@ -154,10 +208,7 @@ async function apiPost<T>(path: string, body: unknown, authRequired = true): Pro
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API error ${res.status} on ${path}: ${errText}`);
-  }
+  if (!res.ok) return throwParsedError(res);
   return res.json();
 }
 
@@ -170,10 +221,7 @@ async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API error ${res.status} on ${path}: ${errText}`);
-  }
+  if (!res.ok) return throwParsedError(res);
   return res.json();
 }
 
@@ -182,10 +230,7 @@ async function apiDelete(path: string): Promise<void> {
     method: 'DELETE',
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API error ${res.status} on ${path}: ${errText}`);
-  }
+  if (!res.ok) return throwParsedError(res);
 }
 
 async function apiDeleteWithBody(path: string, body: unknown): Promise<void> {
@@ -197,10 +242,7 @@ async function apiDeleteWithBody(path: string, body: unknown): Promise<void> {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API error ${res.status} on ${path}: ${errText}`);
-  }
+  if (!res.ok) return throwParsedError(res);
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -234,4 +276,13 @@ export const api = {
     apiDeleteWithBody(`/accounts/users/${id}/`, { reason }),
   resetPassword: (data: ResetPasswordPayload) =>
     apiPost<{ message: string }>('/accounts/admin-reset-password/', data),
+
+  getCustomers: () => apiFetch<DjangoCustomer[]>('/sales/customers/'),
+    getOrders: () => apiFetch<DjangoOrder[]>('/sales/orders/'),
+  createCustomer: (data: CreateCustomerPayload) =>
+    apiPost<DjangoCustomer>('/sales/customers/', data),
+  updateCustomer: (id: number, data: UpdateCustomerPayload) =>
+    apiPatch<DjangoCustomer>(`/sales/customers/${id}/`, data),
+  deleteCustomer: (id: number) =>
+    apiDelete(`/sales/customers/${id}/`),
 };

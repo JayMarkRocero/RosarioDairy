@@ -9,4 +9,6 @@ export interface SystemUser {
   email: string;
   status: UserStatus;
   last: string;
+  phone: string;
+  address: string;
 }

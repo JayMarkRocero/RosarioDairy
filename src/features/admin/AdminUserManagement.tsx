@@ -6,9 +6,11 @@ import type { Column } from "../../components";
 import { C } from "../../constants/colors";
 import { userService } from "../../services/user.service";
 import type { SystemUser } from "../../types/user";
+import { isValidPhoneNumber, PHONE_FORMAT_HINT } from "../../lib/validators";
 
 const inputClass = "w-full px-3.5 py-2.5 rounded-xl text-sm outline-none border transition-colors focus:border-blue-400";
 const inputStyle = { borderColor:C.border, color:C.text, backgroundColor:"#F8FAFC" };
+const readOnlyStyle = { borderColor:C.border, color:C.muted, backgroundColor:"#F1F3F5" };
 
 const ROLES = ["Administrator", "Staff"];
 const DEACTIVATION_REASONS = ["suspended", "resigned", "terminated", "on_leave"];
@@ -19,8 +21,10 @@ interface FormState {
   lastName: string;
   email: string;
   password: string;
+  phoneNumber: string;
+  address: string;
 }
-const EMPTY_FORM: FormState = { username:"", firstName:"", lastName:"", email:"", password:"" };
+const EMPTY_FORM: FormState = { username:"", firstName:"", lastName:"", email:"", password:"", phoneNumber:"", address:"" };
 
 // ─── Form — defined OUTSIDE the main component so it doesn't remount on every keystroke ──
 function UserForm({ title, form, onChange, role, onRoleChange }: {
@@ -32,11 +36,18 @@ function UserForm({ title, form, onChange, role, onRoleChange }: {
 }) {
   return (
     <div className="space-y-4">
-      {title==="Add User" && (
+      {title==="Add User" ? (
         <div>
           <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Username</label>
           <input className={inputClass} style={inputStyle} placeholder="jdelacruz"
+            autoComplete="off"
             value={form.username} onChange={e=>onChange({...form,username:e.target.value})}/>
+        </div>
+      ) : (
+        <div>
+          <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Username</label>
+          <input className={inputClass} style={readOnlyStyle} value={form.username} readOnly disabled/>
+          <p className="text-xs mt-1" style={{color:C.muted}}>Username cannot be changed.</p>
         </div>
       )}
       <div className="grid grid-cols-2 gap-4">
@@ -53,7 +64,20 @@ function UserForm({ title, form, onChange, role, onRoleChange }: {
         <div className="col-span-2">
           <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Email</label>
           <input className={inputClass} style={inputStyle} placeholder="juan@rosariodairy.com"
+            autoComplete="off"
             value={form.email} onChange={e=>onChange({...form,email:e.target.value})}/>
+        </div>
+        <div>
+  <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Phone Number</label>
+  <input className={inputClass} style={inputStyle} placeholder="09XXXXXXXXX"
+    maxLength={11}
+    value={form.phoneNumber}
+    onChange={e=>onChange({...form,phoneNumber:e.target.value.replace(/\D/g, "")})}/>
+</div>
+        <div className="col-span-2">
+          <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Address</label>
+          <input className={inputClass} style={inputStyle} placeholder="Street, Barangay, City"
+            value={form.address} onChange={e=>onChange({...form,address:e.target.value})}/>
         </div>
       </div>
       <div>
@@ -73,6 +97,7 @@ function UserForm({ title, form, onChange, role, onRoleChange }: {
         <div>
           <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Temporary Password</label>
           <input className={inputClass} style={inputStyle} type="password" placeholder="Min. 8 characters"
+            autoComplete="new-password"
             value={form.password} onChange={e=>onChange({...form,password:e.target.value})}/>
         </div>
       )}
@@ -136,12 +161,20 @@ export function AdminUserManagement() {
   };
 
   const openEdit = (u: SystemUser) => {
-    setSelected(u);
-    const [firstName, ...rest] = u.name.split(" ");
-    setForm({ username: "", firstName: firstName ?? "", lastName: rest.join(" "), email: u.email, password: "" });
-    setRole(u.role);
-    setEditOpen(true);
-  };
+  setSelected(u);
+  const [firstName, ...rest] = u.name.split(" ");
+  setForm({
+    username: u.username ?? "",
+    firstName: firstName ?? "",
+    lastName: rest.join(" "),
+    email: u.email,
+    password: "",
+    phoneNumber: u.phone !== "—" ? u.phone : "",
+    address: u.address !== "—" ? u.address : "",
+  });
+  setRole(u.role);
+  setEditOpen(true);
+};
 
   const handleAddSave = () => {
     if (!form.username || !form.email || !form.password) {
@@ -162,7 +195,7 @@ export function AdminUserManagement() {
         setForm(EMPTY_FORM);
         loadUsers();
       })
-      .catch(() => toast.error("Failed to add user."))
+      .catch((err: Error) => toast.error(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -171,12 +204,18 @@ export function AdminUserManagement() {
     if (!form.email) {
       toast.error("Email is required."); return;
     }
+    if (!isValidPhoneNumber(form.phoneNumber)) {
+      toast.error(PHONE_FORMAT_HINT); return;
+    }
+
     setLoading(true);
     userService.updateUser(selected.id, {
       email: form.email,
       role,
       firstName: form.firstName,
       lastName: form.lastName,
+      phoneNumber: form.phoneNumber,
+      address: form.address,
     })
       .then(() => {
         toast.success("User updated successfully!");
@@ -184,7 +223,7 @@ export function AdminUserManagement() {
         setForm(EMPTY_FORM);
         loadUsers();
       })
-      .catch(() => toast.error("Failed to update user. You may not be able to edit your own account."))
+      .catch((err: Error) => toast.error(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -197,7 +236,7 @@ export function AdminUserManagement() {
         setDeleteOpen(false);
         loadUsers();
       })
-      .catch(() => toast.error("Failed to deactivate user. You may not be able to deactivate the last admin or your own account."))
+      .catch((err: Error) => toast.error(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -213,7 +252,7 @@ export function AdminUserManagement() {
         setResetOpen(false);
         setNewPassword("");
       })
-      .catch(() => toast.error("Failed to reset password."))
+      .catch((err: Error) => toast.error(err.message))
       .finally(() => setLoading(false));
   };
 
@@ -257,7 +296,7 @@ export function AdminUserManagement() {
   ];
 
   return (
-    <div className="flex flex-col min-h-full gap-4 p-4 sm:p-6">
+    <div className="flex flex-col min-h-full gap-4 p-4 sm:p-6 max-w-[1400px] mx-auto w-full">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-shrink-0">
         <h2 className="text-base sm:text-lg font-bold leading-snug" style={{color:C.muted}}>
           Manage administrator and staff accounts
@@ -267,17 +306,17 @@ export function AdminUserManagement() {
         </Btn>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 flex-shrink-0">
-        {summary.map(s=>(
-          <Card key={s.label} className="p-4 flex items-center gap-3">
-            <div className="w-2 h-10 rounded-full flex-shrink-0" style={{backgroundColor:s.color}}/>
-            <div className="min-w-0">
-              <div className="font-bold text-2xl" style={{color:s.color,fontFamily:"Poppins,sans-serif"}}>{s.value}</div>
-              <div className="text-xs truncate" style={{color:C.muted}}>{s.label}</div>
-            </div>
-          </Card>
-        ))}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-shrink-0">
+  {summary.map(s=>(
+    <Card key={s.label} className="p-3.5 flex items-center gap-2.5">
+      <div className="w-1.5 h-9 rounded-full flex-shrink-0" style={{backgroundColor:s.color}}/>
+      <div className="min-w-0">
+        <div className="font-bold text-xl leading-tight" style={{color:s.color,fontFamily:"Poppins,sans-serif"}}>{s.value}</div>
+        <div className="text-xs truncate" style={{color:C.muted}}>{s.label}</div>
       </div>
+    </Card>
+  ))}
+</div>
 
       <Card className="p-5">
         <EnhancedTable
@@ -321,7 +360,13 @@ export function AdminUserManagement() {
               <p className="text-sm" style={{color:C.muted}}>{selected.role}</p>
               <div className="mt-2"><StatusBadge status={selected.status}/></div>
             </div>
-            {[{l:"Email",v:selected.email},{l:"Last Login",v:selected.last}].map(r=>(
+            {[
+              {l:"Username",v:selected.username},
+              {l:"Email",v:selected.email},
+              {l:"Phone",v:selected.phone},
+              {l:"Address",v:selected.address},
+              {l:"Last Login",v:selected.last},
+]           .map(r=>(
               <div key={r.l} className="flex justify-between py-2" style={{borderBottom:`1px solid ${C.border}`}}>
                 <span className="text-sm" style={{color:C.muted}}>{r.l}</span>
                 <span className="text-sm font-semibold" style={{color:C.text}}>{r.v}</span>
@@ -357,6 +402,7 @@ export function AdminUserManagement() {
           <div>
             <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>New Password</label>
             <input className={inputClass} style={inputStyle} type="password" placeholder="Min. 8 characters"
+              autoComplete="new-password"
               value={newPassword} onChange={e=>setNewPassword(e.target.value)}/>
           </div>
         </div>
