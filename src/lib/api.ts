@@ -28,6 +28,10 @@ export function getAccessToken() {
   return accessToken;
 }
 
+export interface CreateOrderPayload {
+  customer_id: number;
+}
+
 // ─── Django response shapes ──────────────────────────────────────────────────
 export interface DjangoCategory {
   id: number;
@@ -98,6 +102,8 @@ export interface CreateCategoryPayload {
   description: string | null;
   is_active: boolean;
 }
+
+export type UpdateCategoryPayload = Partial<CreateCategoryPayload>;
 
 export interface DjangoUserListItem {
   id: number;
@@ -245,6 +251,17 @@ async function apiDeleteWithBody(path: string, body: unknown): Promise<void> {
   if (!res.ok) return throwParsedError(res);
 }
 
+// Some DELETE endpoints (e.g. category soft-delete) return 200 + a JSON body
+// instead of a plain 204, so we parse and hand back the result.
+async function apiDeleteWithResult<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'DELETE',
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (!res.ok) return throwParsedError(res);
+  return res.json();
+}
+
 // ─── API ──────────────────────────────────────────────────────────────────────
 export const api = {
   login: (data: LoginPayload) =>
@@ -267,6 +284,11 @@ export const api = {
   deleteProduct: (id: number) =>
     apiDelete(`/inventory/products/${id}/`),
 
+  updateCategory: (id: number, data: UpdateCategoryPayload) =>
+    apiPatch<DjangoCategory>(`/inventory/categories/${id}/`, data),
+  deleteCategory: (id: number) =>
+    apiDeleteWithResult<{ message: string }>(`/inventory/categories/${id}/`),
+
   getUsers: () => apiFetch<DjangoUserListItem[]>('/accounts/users/'),
   registerUser: (data: RegisterUserPayload) =>
     apiPost<{ message: string }>('/accounts/register/', data),
@@ -278,11 +300,20 @@ export const api = {
     apiPost<{ message: string }>('/accounts/admin-reset-password/', data),
 
   getCustomers: () => apiFetch<DjangoCustomer[]>('/sales/customers/'),
-    getOrders: () => apiFetch<DjangoOrder[]>('/sales/orders/'),
+  getOrders: () => apiFetch<DjangoOrder[]>('/sales/orders/'),
   createCustomer: (data: CreateCustomerPayload) =>
     apiPost<DjangoCustomer>('/sales/customers/', data),
   updateCustomer: (id: number, data: UpdateCustomerPayload) =>
     apiPatch<DjangoCustomer>(`/sales/customers/${id}/`, data),
   deleteCustomer: (id: number) =>
     apiDelete(`/sales/customers/${id}/`),
+
+  createOrder: (data: CreateOrderPayload) =>
+  apiPost<DjangoOrder>('/sales/orders/', data),
+confirmOrder: (id: number) =>
+  apiPost<DjangoOrder>(`/sales/orders/${id}/confirm/`, {}),
+fulfillOrder: (id: number, paymentMethod: string) =>
+  apiPost<DjangoOrder>(`/sales/orders/${id}/fulfill/`, { payment_method: paymentMethod }),
+cancelOrder: (id: number) =>
+  apiPost<DjangoOrder>(`/sales/orders/${id}/cancel/`, {}),
 };

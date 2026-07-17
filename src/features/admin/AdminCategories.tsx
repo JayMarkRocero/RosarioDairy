@@ -16,6 +16,39 @@ const inputStyle = { borderColor: C.border, color: C.text, backgroundColor: "#F8
 interface FormState { name: string; desc: string; active: boolean }
 const EMPTY: FormState = { name:"", desc:"", active:true };
 
+// Moved outside AdminCategories: defining this inside the component body
+// created a brand-new component type on every render (since typing updates
+// `form` state), which remounted the inputs and lost focus after each keystroke.
+function CategoryForm({ form, setForm }: { form: FormState; setForm: React.Dispatch<React.SetStateAction<FormState>> }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Category Name</label>
+        <input className={inputClass} style={inputStyle} value={form.name}
+          onChange={e => setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Milk"/>
+      </div>
+      <div>
+        <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Description</label>
+        <input className={inputClass} style={inputStyle} value={form.desc}
+          onChange={e => setForm(f=>({...f,desc:e.target.value}))} placeholder="Short description"/>
+      </div>
+      <div className="flex items-center justify-between p-3 rounded-xl" style={{backgroundColor:C.bg}}>
+        <div>
+          <div className="text-sm font-medium" style={{color:C.text}}>Active Status</div>
+          <div className="text-xs" style={{color:C.muted}}>Category is visible to staff</div>
+        </div>
+        <button
+          onClick={() => setForm(f=>({...f,active:!f.active}))}
+          className="w-11 h-6 rounded-full transition-colors relative"
+          style={{backgroundColor:form.active?C.green:C.border}}>
+          <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+            style={{left:form.active?"calc(100% - 22px)":"2px"}}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AdminCategories() {
   const [cats, setCats] = useState<Category[]>([]);
   const [catsLoading, setCatsLoading] = useState(true);
@@ -56,51 +89,34 @@ export function AdminCategories() {
           setForm(EMPTY);
           loadCategories();
         })
-        .catch(() => toast.error("Failed to add category."))
+        .catch((err) => toast.error(err.message || "Failed to add category."))
         .finally(() => setLoading(false));
     } else {
-      // Edit still fake for now — wire to a real PATCH call next.
-      setTimeout(() => {
-        setLoading(false);
-        setEditOpen(false);
-        setForm(EMPTY);
-        toast.success("Category updated!");
-      }, 700);
+      if (!selected) return;
+      inventoryService.updateCategory(selected.id, form)
+        .then(() => {
+          toast.success("Category updated!");
+          setEditOpen(false);
+          setForm(EMPTY);
+          loadCategories();
+        })
+        .catch((err) => toast.error(err.message || "Failed to update category."))
+        .finally(() => setLoading(false));
     }
   };
 
   const handleDelete = () => {
+    if (!selected) return;
     setLoading(true);
-    setTimeout(() => { setLoading(false); setDeleteOpen(false); toast.success(`${selected?.name} deleted.`); }, 600);
+    inventoryService.deleteCategory(selected.id)
+      .then((message) => {
+        toast.success(message || `${selected.name} deleted.`);
+        setDeleteOpen(false);
+        loadCategories();
+      })
+      .catch((err) => toast.error(err.message || "Failed to delete category."))
+      .finally(() => setLoading(false));
   };
-
-  const CategoryForm = () => (
-    <div className="space-y-4">
-      <div>
-        <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Category Name</label>
-        <input className={inputClass} style={inputStyle} value={form.name}
-          onChange={e => setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Milk"/>
-      </div>
-      <div>
-        <label className="text-xs font-semibold block mb-1.5" style={{color:C.muted}}>Description</label>
-        <input className={inputClass} style={inputStyle} value={form.desc}
-          onChange={e => setForm(f=>({...f,desc:e.target.value}))} placeholder="Short description"/>
-      </div>
-      <div className="flex items-center justify-between p-3 rounded-xl" style={{backgroundColor:C.bg}}>
-        <div>
-          <div className="text-sm font-medium" style={{color:C.text}}>Active Status</div>
-          <div className="text-xs" style={{color:C.muted}}>Category is visible to staff</div>
-        </div>
-        <button
-          onClick={() => setForm(f=>({...f,active:!f.active}))}
-          className="w-11 h-6 rounded-full transition-colors relative"
-          style={{backgroundColor:form.active?C.green:C.border}}>
-          <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
-            style={{left:form.active?"calc(100% - 22px)":"2px"}}/>
-        </button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="p-6 space-y-5">
@@ -108,73 +124,101 @@ export function AdminCategories() {
         <div>
           <h2 className="text-lg font-bold" style={{color:C.muted}}>Organize products by type</h2>
         </div>
-        <Btn variant="primary" size="sm" icon={<Plus size={13}/>} fullWidth onClick={()=>{setForm(EMPTY);setAddOpen(true);}}>
+        <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={()=>{setForm(EMPTY);setAddOpen(true);}}>
           Add Category
         </Btn>
       </div>
 
-      {catsLoading && (
-        <p className="text-sm" style={{color:C.muted}}>Loading categories…</p>
-      )}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{backgroundColor:C.bg, borderBottom:`1px solid ${C.border}`}}>
+                <th className="text-left px-5 py-3 font-semibold text-xs uppercase tracking-wide" style={{color:C.muted}}>Category</th>
+                <th className="text-left px-5 py-3 font-semibold text-xs uppercase tracking-wide" style={{color:C.muted}}>Description</th>
+                <th className="text-left px-5 py-3 font-semibold text-xs uppercase tracking-wide" style={{color:C.muted}}>Products</th>
+                <th className="text-left px-5 py-3 font-semibold text-xs uppercase tracking-wide" style={{color:C.muted}}>Status</th>
+                <th className="text-right px-5 py-3 font-semibold text-xs uppercase tracking-wide" style={{color:C.muted}}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {catsLoading && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-6 text-center text-sm" style={{color:C.muted}}>
+                    Loading categories…
+                  </td>
+                </tr>
+              )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {cats.map(cat => (
-          <Card key={cat.id} className="p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl"
-                style={{backgroundColor:C.blue+"12"}}>
-                {EMOJI[cat.name]??"📦"}
-              </div>
-              <div className="flex gap-1">
-                <button onClick={()=>{setSelected(cat);setViewOpen(true);}}
-                  className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors" style={{color:C.blue}}>
-                  <Eye size={13}/>
-                </button>
-                <button onClick={()=>openEdit(cat)}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" style={{color:C.muted}}>
-                  <Edit size={13}/>
-                </button>
-                <button onClick={()=>{setSelected(cat);setDeleteOpen(true);}}
-                  className="p-1.5 rounded-lg hover:bg-red-50 transition-colors" style={{color:C.red}}>
-                  <Trash2 size={13}/>
-                </button>
-              </div>
-            </div>
-            <h3 className="font-bold text-base" style={{color:C.text,fontFamily:"Poppins,sans-serif"}}>{cat.name}</h3>
-            <p className="text-xs mt-1 leading-relaxed" style={{color:C.muted}}>{cat.desc}</p>
-            <div className="flex items-center justify-between mt-4 pt-3" style={{borderTop:`1px solid ${C.border}`}}>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                style={{backgroundColor:C.blue+"15",color:C.blue}}>
-                {cat.products} products
-              </span>
-              <StatusBadge status={cat.active?"Active":"Inactive"}/>
-            </div>
-          </Card>
-        ))}
+              {!catsLoading && cats.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-10 text-center text-sm" style={{color:C.muted}}>
+                    No categories yet. Add one to get started.
+                  </td>
+                </tr>
+              )}
 
-        <button onClick={()=>{setForm(EMPTY);setAddOpen(true);}}
-          className="rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-3 py-10 hover:border-blue-300 hover:bg-blue-50/40 transition-all"
-          style={{borderColor:C.border}}>
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
-            style={{backgroundColor:C.blue+"15"}}>
-            <Plus size={20} style={{color:C.blue}}/>
-          </div>
-          <span className="text-sm font-semibold" style={{color:C.blue}}>Add Category</span>
-        </button>
-      </div>
+              {!catsLoading && cats.map(cat => (
+                <tr key={cat.id} className="hover:bg-gray-50/70 transition-colors"
+                  style={{borderBottom:`1px solid ${C.border}`}}>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                        style={{backgroundColor:C.blue+"12"}}>
+                        {EMOJI[cat.name]??"📦"}
+                      </div>
+                      <span className="font-semibold" style={{color:C.text, fontFamily:"Poppins,sans-serif"}}>
+                        {cat.name}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 max-w-xs whitespace-normal break-words" style={{color:C.muted}}>
+                    {cat.desc}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                      style={{backgroundColor:C.blue+"15",color:C.blue}}>
+                      {cat.products}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <StatusBadge status={cat.active?"Active":"Inactive"}/>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={()=>{setSelected(cat);setViewOpen(true);}}
+                        className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors" style={{color:C.blue}}>
+                        <Eye size={14}/>
+                      </button>
+                      <button onClick={()=>openEdit(cat)}
+                        className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors" style={{color:C.muted}}>
+                        <Edit size={14}/>
+                      </button>
+                      <button onClick={()=>{setSelected(cat);setDeleteOpen(true);}}
+                        className="p-1.5 rounded-lg hover:bg-red-50 transition-colors" style={{color:C.red}}>
+                        <Trash2 size={14}/>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {/* Add Modal */}
       <Modal open={addOpen} onClose={()=>setAddOpen(false)} title="Add Category" subtitle="Create a new product category"
         footer={<><Btn variant="secondary" onClick={()=>setAddOpen(false)}>Cancel</Btn>
           <Btn variant="primary" onClick={()=>save("add")} disabled={loading}>{loading?"Saving…":"Add Category"}</Btn></>}>
-        <CategoryForm/>
+        <CategoryForm form={form} setForm={setForm}/>
       </Modal>
 
       {/* Edit Modal */}
       <Modal open={editOpen} onClose={()=>setEditOpen(false)} title="Edit Category" subtitle={selected?.name}
         footer={<><Btn variant="secondary" onClick={()=>setEditOpen(false)}>Cancel</Btn>
           <Btn variant="primary" onClick={()=>save("edit")} disabled={loading}>{loading?"Saving…":"Save Changes"}</Btn></>}>
-        <CategoryForm/>
+        <CategoryForm form={form} setForm={setForm}/>
       </Modal>
 
       {/* View Drawer */}

@@ -1,4 +1,4 @@
-import { api, type CreateProductPayload, type CreateProductBatchPayload, type CreateCategoryPayload, type UpdateProductPayload } from "../lib/api";
+import { api, type CreateProductPayload, type CreateProductBatchPayload, type CreateCategoryPayload, type UpdateCategoryPayload, type UpdateProductPayload } from "../lib/api";
 import type { InventoryItem, FEFOItem, Category } from "../types/inventory";
 
 function daysUntil(dateStr: string): number {
@@ -130,6 +130,26 @@ export const inventoryService = {
       is_active: input.active,
     };
     await api.createCategory(payload);
+  },
+
+  updateCategory: async (
+    categoryId: number,
+    input: { name: string; desc: string; active: boolean }
+  ): Promise<void> => {
+    const payload: UpdateCategoryPayload = {
+      name: input.name,
+      description: input.desc || null,
+      is_active: input.active,
+    };
+    await api.updateCategory(categoryId, payload);
+  },
+
+  // Note: this is a soft delete on the backend — the category's is_active
+  // flag is flipped to false rather than the row being removed, so existing
+  // products keep their category reference intact.
+  deleteCategory: async (categoryId: number): Promise<string> => {
+    const { message } = await api.deleteCategory(categoryId);
+    return message;
   },
 
   // Note: only updates Product-level fields (name, price, category).
