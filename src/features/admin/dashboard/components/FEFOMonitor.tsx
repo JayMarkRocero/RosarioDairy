@@ -13,7 +13,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const STATUS_COLOR: Record<string, string> = {
   green:  C.green,
-  yellow: "#F59E0B",
+  yellow: "#b8b80e",
   orange: C.orange,
   red:    C.red,
 };
@@ -158,7 +158,7 @@ export function FEFOMonitor() {
                   <td className="py-2.5 px-2 whitespace-nowrap"             style={{ color: C.text }}>{item.expiry}</td>
                   <td
                     className="py-2.5 px-2 font-semibold"
-                    style={{ color: item.days <= 3 ? C.red : item.days <= 7 ? C.orange : C.muted }}
+                    style={{ color: item.days <= -1 ? C.red : item.days <= 7 ? C.orange : C.muted }}
                   >
                     {item.days}d
                   </td>

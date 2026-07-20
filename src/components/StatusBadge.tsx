@@ -13,7 +13,7 @@ const statusMap: Record<string, { bg: string; color: string }> = {
   "Near Expiry": { bg: "#FFFDE7", color: "#F59E0B" },
   Critical:   { bg: "#FFEBEE", color: C.red    },
   High:       { bg: "#FFF3E0", color: C.orange },
-  Medium:     { bg: "#FFFDE7", color: "#ffff05" },
+  Medium:     { bg: "#FFFDE7", color: "#b8b80e" },
 };
 
 interface Props {
