@@ -9,7 +9,7 @@ function daysUntil(dateStr: string): number {
 }
 
 function fefoStatus(days: number): { st: FEFOItem["st"]; priority: string } {
-  if (days <= 3) return { st: "red", priority: "Critical" };
+  if (days <= -1) return { st: "red", priority: "Critical" };
   if (days <= 7) return { st: "orange", priority: "High" };
   if (days <= 14) return { st: "yellow", priority: "Medium" };
   return { st: "green", priority: "Low" };

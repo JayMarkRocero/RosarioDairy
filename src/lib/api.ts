@@ -220,6 +220,16 @@ export interface DjangoTransaction {
   created_at: string;
 }
 
+export interface DjangoBestSeller {
+  product: string;
+  sales: number;
+}
+
+export interface DjangoSalesByCategory {
+  name: string;
+  value: number;
+}
+
 // ─── Error parsing helper ──────────────────────────────────────────────────────
 async function throwParsedError(res: Response): Promise<never> {
   const errText = await res.text();
@@ -365,5 +375,11 @@ getTransactions: (params?: { start_date?: string; end_date?: string; payment_met
   const qs = query.toString();
   return apiFetch<DjangoTransaction[]>(`/sales/transactions/${qs ? `?${qs}` : ''}`);
 },
+
+getBestSellers: (limit = 10) =>
+  apiFetch<DjangoBestSeller[]>(`/sales/reports/best-sellers/?limit=${limit}`),
+
+getSalesByCategory: () =>
+  apiFetch<DjangoSalesByCategory[]>('/sales/reports/sales-by-category/'),
 
 };

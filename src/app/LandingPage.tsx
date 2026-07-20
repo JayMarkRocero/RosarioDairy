@@ -762,21 +762,6 @@ function StatCard({ target, suffix, label, decimals = 0 }: { target: number; suf
   );
 }
 
-function StatsSection() {
-  return (
-    <section className="py-20" style={{ backgroundColor: C.bg }}>
-      <div className="max-w-7xl mx-auto px-5 sm:px-8">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <StatCard target={10000} suffix="+" label="Transactions Processed" />
-          <StatCard target={98} suffix="%" label="Inventory Accuracy" />
-          <StatCard target={95} suffix="%" label="Forecast Confidence" />
-          <StatCard target={24} suffix="/7" label="System Availability" />
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /*  7. About Section                                                   */
 /* ------------------------------------------------------------------ */
@@ -785,7 +770,6 @@ function AboutSection() {
   const points = [
     "Inventory Management across raw milk and finished goods",
     "Point of Sale for daily transactions",
-    "Sales monitoring across branches and channels",
     "Analytics that turn transactions into insight",
     "SARIMA forecasting for seasonal demand planning",
     "Role-based access for admin and staff",
@@ -793,7 +777,7 @@ function AboutSection() {
   ];
 
   return (
-    <section id="about" className="py-20" style={{ backgroundColor: C.white }}>
+    <section id="about" className="py-20" style={{ backgroundColor: C.bg }}>
       <div className="max-w-7xl mx-auto px-5 sm:px-8 grid lg:grid-cols-2 gap-14">
         <SectionHeading
           eyebrow="About the system"
@@ -956,7 +940,6 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
       <FeaturesSection />
       <WhyChooseSection />
       <WorkflowSection />
-      <StatsSection />
       <AboutSection />
       <CTASection onLogin={onLogin} />
       <Footer />
