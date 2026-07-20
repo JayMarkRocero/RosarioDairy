@@ -14,7 +14,8 @@ interface FormState {
   name: string; cat: string; price: string; stock: string; expiry: string;
 }
 const EMPTY_FORM: FormState = { name:"", cat:"", price:"", stock:"", expiry:"" };
-const STATUSES = ["Active", "Low Stock"];
+const STATUSES = ["Active", "Low Stock", "Near Expiry", "Expired"];
+const NEAR_EXPIRY_DAYS = 7;
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -26,6 +27,39 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 const inputClass = `w-full px-3.5 py-2.5 rounded-xl text-sm outline-none border transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100`;
 const inputStyle = { borderColor: C.border, color: C.text, backgroundColor: "#F8FAFC" };
+
+// Compares expiry date against today. A product expiring "today" is not yet
+// expired — it becomes expired starting the day after.
+function isExpired(expiry: string): boolean {
+  if (!expiry) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiryDate = new Date(expiry);
+  expiryDate.setHours(0, 0, 0, 0);
+  return expiryDate < today;
+}
+
+function daysUntilExpiry(expiry: string): number | null {
+  if (!expiry) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiryDate = new Date(expiry);
+  expiryDate.setHours(0, 0, 0, 0);
+  return Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function isNearExpiry(expiry: string): boolean {
+  const days = daysUntilExpiry(expiry);
+  return days !== null && days >= 0 && days <= NEAR_EXPIRY_DAYS;
+}
+
+// Priority: Expired > Low Stock > Near Expiry > Active
+function getStatus(item: InventoryItem): "Expired" | "Low" | "Near Expiry" | "Active" {
+  if (isExpired(item.expiry)) return "Expired";
+  if (item.low) return "Low";
+  if (isNearExpiry(item.expiry)) return "Near Expiry";
+  return "Active";
+}
 
 function ProductForm({ form, onChange, categories }: {
   form: FormState;
@@ -66,6 +100,12 @@ function ProductForm({ form, onChange, categories }: {
 
 // ─── View Drawer Content ──────────────────────────────────────────────────────
 function ProductDetail({ p }: { p: InventoryItem }) {
+  const status = getStatus(p);
+  const statusLabel =
+    status === "Expired" ? "Expired" :
+    status === "Low" ? "Low Stock" :
+    status === "Near Expiry" ? "Near Expiry" : "Adequate";
+  const accentColor = status === "Expired" ? C.red : status === "Near Expiry" ? "#f0c06f" : C.blue;
   const rows = [
     { label:"Product ID",    value:`PRD-${String(p.id).padStart(3,"0")}` },
     { label:"Name",          value: p.name     },
@@ -73,19 +113,19 @@ function ProductDetail({ p }: { p: InventoryItem }) {
     { label:"Unit Price",    value:`₱${p.price}` },
     { label:"Stock Qty",     value: p.stock    },
     { label:"Expiry Date",   value: p.expiry   },
-    { label:"FEFO Status",   value: p.low ? "Low Stock" : "Adequate" },
+    { label:"FEFO Status",   value: statusLabel },
   ];
   return (
     <div className="space-y-5 p-6">
       <div
         className="rounded-2xl p-4 text-center"
-        style={{ backgroundColor: C.blue + "08", border:`1px solid ${C.blue}20` }}
+        style={{ backgroundColor: accentColor + "08", border:`1px solid ${accentColor}20` }}
       >
         <div className="text-4xl mb-2">
           {p.cat==="Milk"?"🥛":p.cat==="Cheese"?"🧀":p.cat==="Butter"?"🧈":p.cat==="Yogurt"?"🍶":p.cat==="Ice Cream"?"🍨":"🍦"}
         </div>
         <div className="font-bold text-base" style={{ color:C.text,fontFamily:"Poppins,sans-serif" }}>{p.name}</div>
-        <div className="mt-1"><StatusBadge status={p.low ? "Low" : "Active"}/></div>
+        <div className="mt-1"><StatusBadge status={status}/></div>
       </div>
       <div className="space-y-5 p-6">
         {rows.map(r => (
@@ -95,11 +135,25 @@ function ProductDetail({ p }: { p: InventoryItem }) {
           </div>
         ))}
       </div>
-      {p.low && (
+      {status === "Expired" && (
+        <div className="flex items-center gap-2 p-3 rounded-xl text-xs"
+          style={{backgroundColor:C.red+"15",color:C.red,border:`1px solid ${C.red}30`}}>
+          <AlertTriangle size={14}/>
+          <span>This product has expired and should be removed from active stock.</span>
+        </div>
+      )}
+      {status === "Low" && (
         <div className="flex items-center gap-2 p-3 rounded-xl text-xs"
           style={{backgroundColor:C.orange+"15",color:C.orange,border:`1px solid ${C.orange}30`}}>
           <AlertTriangle size={14}/>
           <span>This product is below the minimum stock threshold.</span>
+        </div>
+      )}
+      {status === "Near Expiry" && (
+        <div className="flex items-center gap-2 p-3 rounded-xl text-xs"
+          style={{backgroundColor:"#F59E0B"+"15",color:"#F59E0B",border:`1px solid #F59E0B30`}}>
+          <AlertTriangle size={14}/>
+          <span>This product expires within {NEAR_EXPIRY_DAYS} days — prioritize it for sale (FEFO).</span>
         </div>
       )}
     </div>
@@ -137,29 +191,29 @@ export function AdminInventory() {
   const [form,        setForm]       = useState<FormState>(EMPTY_FORM);
   const [loading,     setLoading]    = useState(false);
 
-  // ── Filtered data (category + status filters applied before the table's own search/sort/paginate) ──
   const filteredItems = useMemo(() => {
     return items.filter(i => {
       const matchesCat = catFilter === "All" || i.cat === catFilter;
+      const status = getStatus(i);
       const matchesStatus =
         statusFilter === "All" ||
-        (statusFilter === "Low Stock" ? i.low : !i.low);
+        (statusFilter === "Low Stock" ? status === "Low" :
+         statusFilter === "Near Expiry" ? status === "Near Expiry" :
+         statusFilter === "Expired" ? status === "Expired" :
+         status === "Active");
       return matchesCat && matchesStatus;
     });
   }, [items, catFilter, statusFilter]);
 
   const stats = useMemo(() => {
-  const totalProducts = items.length;
-  const lowStock = items.filter(i => i.low).length;
-  const nearExpiry = items.filter(i => {
-    if (!i.expiry) return false;
-    const days = Math.ceil((new Date(i.expiry).getTime() - new Date().setHours(0,0,0,0)) / (1000*60*60*24));
-    return days <= 7;
-  }).length;
-  const totalValue = items.reduce((sum, i) => sum + (i.price * i.stock), 0);
+    const totalProducts = items.length;
+    const lowStock = items.filter(i => getStatus(i) === "Low").length;
+    const expired = items.filter(i => getStatus(i) === "Expired").length;
+    const nearExpiry = items.filter(i => getStatus(i) === "Near Expiry").length;
+    const totalValue = items.reduce((sum, i) => sum + (i.price * i.stock), 0);
 
-  return { totalProducts, lowStock, nearExpiry, totalValue };
-}, [items]);
+    return { totalProducts, lowStock, expired, nearExpiry, totalValue };
+  }, [items]);
 
   const openEdit = (p: InventoryItem) => {
     setSelected(p);
@@ -223,10 +277,9 @@ export function AdminInventory() {
       .finally(() => setLoading(false));
   };
 
-  // ── Columns ────────────────────────────────────────────────────────────────
-const columns: Column<InventoryItem>[] = [
+  const columns: Column<InventoryItem>[] = [
     {
-      key:"name", header:"Product", width:"26%",
+      key:"name", header:"Product", width:"24%",
       sortKey: r => r.name,
       render: r => (
         <div>
@@ -244,24 +297,36 @@ const columns: Column<InventoryItem>[] = [
       ),
     },
     {
-      key:"price", header:"Price", align:"center", width:"12%",
+      key:"price", header:"Price", align:"center", width:"11%",
       sortKey: r => r.price,
       render: r => <span className="font-semibold text-sm" style={{color:C.text}}>₱{r.price}</span>,
     },
     {
-      key:"stock", header:"Stock", align:"center", width:"12%",
+      key:"stock", header:"Stock", align:"center", width:"11%",
       sortKey: r => r.stock,
-      render: r => (
-        <div className="flex items-center justify-center gap-1.5">
-          <span className="font-semibold text-sm" style={{color:r.low?C.red:C.text}}>{r.stock}</span>
-          {r.low && <AlertTriangle size={12} style={{color:C.orange}}/>}
-        </div>
-      ),
+      render: r => {
+        const status = getStatus(r);
+        const iconColor = status === "Expired" ? C.red : status === "Low" ? C.orange : status === "Near Expiry" ? "#F59E0B" : undefined;
+        return (
+          <div className="flex items-center justify-center gap-1.5">
+            <span className="font-semibold text-sm" style={{color:status==="Expired"||status==="Low"?C.red:C.text}}>{r.stock}</span>
+            {status !== "Active" && <AlertTriangle size={12} style={{color:iconColor}}/>}
+          </div>
+        );
+      },
     },
-    { key:"expiry", header:"Expiry", align:"center", width:"14%", sortKey: r => r.expiry,
-      render: r => <span className="text-xs" style={{color:C.muted}}>{r.expiry}</span> },
-    { key:"status", header:"Status", align:"center", width:"14%",
-      render: r => <div className="flex justify-center"><StatusBadge status={r.low?"Low":"Active"}/></div> },
+    { key:"expiry", header:"Expiry", align:"center", width:"13%", sortKey: r => r.expiry,
+      render: r => {
+        const expired = isExpired(r.expiry);
+        const near = !expired && isNearExpiry(r.expiry);
+        return (
+          <span className="text-xs" style={{color:expired?C.red:near?"#F59E0B":C.muted, fontWeight:(expired||near)?600:400}}>
+            {r.expiry}
+          </span>
+        );
+      } },
+    { key:"status", header:"Status", align:"center", width:"13%",
+      render: r => <div className="flex justify-center"><StatusBadge status={getStatus(r)}/></div> },
     {
       key:"actions", header:"Actions", align:"center", width:"10%",
       render: r => (
@@ -294,7 +359,7 @@ const columns: Column<InventoryItem>[] = [
   );
 
   return (
-    <div className="flex flex-col min-h-full gap-4 p-4 sm:p-6 overflow-hidden">
+    <div className="flex flex-col min-h-full gap-4 p-4 sm:p-6 max-w-[1400px] mx-auto w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 flex-shrink-0">
         <div>
@@ -308,17 +373,18 @@ const columns: Column<InventoryItem>[] = [
       </div>
 
       {/* Stats strip */}
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 flex-shrink-0">
-    {[
-       { label:"Total Products",  value:String(stats.totalProducts), color:C.blue   },
-       { label:"Low Stock",       value:String(stats.lowStock),      color:C.orange },
-       { label:"Near Expiry",     value:String(stats.nearExpiry),    color:C.red    },
-       { label:"Total Value",     value:`₱${stats.totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, color:C.green  },
-         ].map(s => (
-          <Card key={s.label} className="p-3 sm:p-4 flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-2 h-10 rounded-full flex-shrink-0" style={{backgroundColor:s.color}}/>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 flex-shrink-0">
+        {[
+          { label:"Total Products",  value:String(stats.totalProducts), color:C.blue   },
+          { label:"Low Stock",       value:String(stats.lowStock),      color:C.orange },
+          { label:"Near Expiry",     value:String(stats.nearExpiry),    color:"#f6c46d" },
+          { label:"Expired",         value:String(stats.expired),       color:C.red    },
+          { label:"Total Value",     value:`₱${stats.totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, color:C.green  },
+        ].map(s => (
+          <Card key={s.label} className="p-3.5 flex items-center gap-2.5">
+            <div className="w-1.5 h-9 rounded-full flex-shrink-0" style={{backgroundColor:s.color}}/>
             <div className="min-w-0">
-              <div className="font-bold text-base sm:text-lg truncate" style={{color:s.color,fontFamily:"Poppins,sans-serif"}}>
+              <div className="font-bold text-xl leading-tight" style={{color:s.color,fontFamily:"Poppins,sans-serif"}}>
                 {s.value}
               </div>
               <div className="text-xs truncate" style={{color:C.muted}}>{s.label}</div>

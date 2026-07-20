@@ -8,6 +8,15 @@ function toBackendRole(role: "Administrator" | "Staff"): "admin" | "staff" {
   return role === "Administrator" ? "admin" : "staff";
 }
 
+function formatLastLogin(lastLogin: string | null): string {
+  if (!lastLogin) return "Never";
+  const date = new Date(lastLogin);
+  return date.toLocaleString("en-PH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export const userService = {
   getAll: async (): Promise<SystemUser[]> => {
     const users = await api.getUsers();
@@ -18,7 +27,7 @@ export const userService = {
       email: u.email,
       role: toDisplayRole(u.role),
       status: u.is_active ? "Active" : "Inactive",
-      last: "—", // backend doesn't currently track last login
+      last: formatLastLogin(u.last_login),
       phone: u.phone_number ?? "—", // blank until backend list endpoint includes it
       address: u.address ?? "—",    // blank until backend list endpoint includes it
     }));

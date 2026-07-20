@@ -50,4 +50,12 @@ export const ordersService = {
   cancelOrder: async (orderId: number): Promise<void> => {
     await api.cancelOrder(orderId);
   },
+
+  getRecent: async (limit = 5): Promise<Order[]> => {
+  const all = await ordersService.getAll();
+  return all
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, limit);
+  },
 };

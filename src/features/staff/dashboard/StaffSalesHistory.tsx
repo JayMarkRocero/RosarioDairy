@@ -1,20 +1,31 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Search, Printer } from "lucide-react";
 import { Card, EnhancedTable } from "../../../components";
 import type { Column } from "../../../components";
 import { C } from "../../../constants/colors";
-import { salesService } from "../../../services/sales.service";
-
-type Sale = ReturnType<typeof salesService.getAll>[number];
+import { salesService, type Sale } from "../../../services/sales.service";
+import { api } from "../../../lib/api";
 
 const PAYMENT_STYLE: Record<string, { bg: string; color: string }> = {
-  Cash:  { bg: C.green  + "15", color: C.green  },
-  GCash: { bg: C.blue   + "15", color: C.blue   },
-  Card:  { bg: "#9B59B6" + "15", color: "#9B59B6" },
+  Cash:   { bg: C.green + "15", color: C.green },
+  Online: { bg: C.blue  + "15", color: C.blue  },
 };
 
 export function StaffSalesHistory() {
-  const records = salesService.getAll();
+  const [records, setRecords] = useState<Sale[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(true);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRecordsLoading(true);
+    Promise.all([salesService.getAll(), api.getCurrentUser()])
+      .then(([sales, user]) => {
+        setRecords(sales);
+        setCurrentUsername(user.username);
+      })
+      .catch(() => {})
+      .finally(() => setRecordsLoading(false));
+  }, []);
 
   const [search, setSearch] = useState("");
   const [payment, setPayment] = useState("All");
@@ -33,10 +44,24 @@ export function StaffSalesHistory() {
         s.receipt.toLowerCase().includes(q) ||
         s.customer.toLowerCase().includes(q);
       const matchesPayment = payment === "All" || s.payment === payment;
-      const matchesDate = !date || new Date(s.date).toDateString() === new Date(date).toDateString();
+      const matchesDate = !date || s.date === date;
       return matchesSearch && matchesPayment && matchesDate;
     });
   }, [records, search, payment, date]);
+
+  const summary = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const today = records.filter(r => r.date === todayStr);
+    const mine = currentUsername ? records.filter(r => r.cashier === currentUsername) : [];
+    return {
+      todayTotal: today.reduce((s, r) => s + r.total, 0),
+      todayCount: today.length,
+      allTotal: records.reduce((s, r) => s + r.total, 0),
+      allCount: records.length,
+      mineTotal: mine.reduce((s, r) => s + r.total, 0),
+      mineCount: mine.length,
+    };
+  }, [records, currentUsername]);
 
   const columns: Column<Sale>[] = [
     { key:"receipt", header:"Receipt #", width:"18%",
@@ -80,9 +105,9 @@ export function StaffSalesHistory() {
       {/* Stat cards - fixed */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 flex-shrink-0">
         {[
-          { label: "Today",     value: "₱22,400",  sub: "34 transactions"  },
-          { label: "This Week", value: "₱134,000", sub: "341 transactions" },
-          { label: "My Sales",  value: "₱89,200",  sub: "226 by me"        },
+          { label: "Today",    value: `₱${summary.todayTotal.toLocaleString()}`, sub: `${summary.todayCount} transactions` },
+          { label: "All Time", value: `₱${summary.allTotal.toLocaleString()}`,   sub: `${summary.allCount} transactions`   },
+          { label: "My Sales", value: `₱${summary.mineTotal.toLocaleString()}`,  sub: `${summary.mineCount} by me`         },
         ].map(s => (
           <Card key={s.label} className="p-4 min-w-0">
             <div className="font-bold text-xl truncate" style={{ color: C.blue, fontFamily: "Poppins, sans-serif" }}>
@@ -132,7 +157,7 @@ export function StaffSalesHistory() {
           />
 
           <span className="text-xs sm:ml-auto" style={{ color: C.muted }}>
-            {filteredRecords.length} of {records.length} transactions
+            {recordsLoading ? "Loading…" : `${filteredRecords.length} of ${records.length} transactions`}
           </span>
         </div>
 
@@ -146,8 +171,8 @@ export function StaffSalesHistory() {
             searchable={false}
             showExport={false}
             showCount={false}
-            emptyTitle="No transactions found"
-            emptyDesc="No transactions match your filters."
+            emptyTitle={recordsLoading ? "Loading transactions…" : "No transactions found"}
+            emptyDesc={recordsLoading ? "Fetching data from the server." : "No transactions match your filters."}
           />
         </div>
       </Card>

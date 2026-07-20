@@ -1,22 +1,29 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { AlertTriangle, Search } from "lucide-react";
 import { Card, EnhancedTable, StatusBadge } from "../../../components";
 import type { Column } from "../../../components";
 import { C } from "../../../constants/colors";
 import { inventoryService } from "../../../services/inventory.service";
-
-type InventoryItem = ReturnType<typeof inventoryService.getAll>[number];
+import type { InventoryItem } from "../../../types/inventory";
 
 const STATUSES = ["All", "Active", "Low Stock"];
 
 export function StaffInventory() {
-  const items = inventoryService.getAll();
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+
+  useEffect(() => {
+    setItemsLoading(true);
+    inventoryService.getAll()
+      .then(setItems)
+      .catch(() => {})
+      .finally(() => setItemsLoading(false));
+  }, []);
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [status, setStatus] = useState("All");
 
-  // Build category list dynamically from the data
   const categories = useMemo(() => {
     const unique = Array.from(new Set(items.map(p => p.cat)));
     return ["All", ...unique];
@@ -116,7 +123,7 @@ export function StaffInventory() {
 
           {/* Results count */}
           <span className="text-xs sm:ml-auto" style={{ color: C.muted }}>
-            {filteredItems.length} of {items.length} products
+            {itemsLoading ? "Loading…" : `${filteredItems.length} of ${items.length} products`}
           </span>
         </div>
 
@@ -130,8 +137,8 @@ export function StaffInventory() {
             searchable={false}
             showExport={false}
             showCount={false}
-            emptyTitle="No products found"
-            emptyDesc="No products match your filters."
+            emptyTitle={itemsLoading ? "Loading products…" : "No products found"}
+            emptyDesc={itemsLoading ? "Fetching data from the server." : "No products match your filters."}
           />
         </div>
       </Card>

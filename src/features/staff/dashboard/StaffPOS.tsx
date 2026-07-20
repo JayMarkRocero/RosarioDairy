@@ -1,40 +1,39 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, ShoppingCart, AlertTriangle, Banknote, Smartphone, Printer, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "../../../components";
 import { C } from "../../../constants/colors";
-import { allInventory } from "../../../constants/dummyData";
+import { inventoryService } from "../../../services/inventory.service";
+import { checkoutService } from "../../../services/checkout.service";
 import type { InventoryItem } from "../../../types/inventory";
 
 type PayMethod  = "Cash" | "GCash";
-type OrderType  = "Walk-in" | "Pickup";
-interface CartItem { id:number; name:string; price:number; qty:number }
+interface CartItem { id:number; name:string; price:number; qty:number; stock:number }
 
 const EMOJI: Record<string,string> = {
   Milk:"🥛", Cheese:"🧀", Butter:"🧈", Yogurt:"🍶", "Ice Cream":"🍨", Cream:"🍦",
 };
 
 const LOW_STOCK_THRESHOLD = 20;
-const TAX_RATE = 0.12;
 
 const money = (n: number) =>
   n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ─── Receipt Modal ─────────────────────────────────────────────────────────────
-function ReceiptModal({ cart, total, tax, subtotal, payment, change, customer, onClose, onConfirm }:{
-  cart:CartItem[]; total:number; tax:number; subtotal:number;
-  payment:PayMethod; change:number; customer:string;
-  onClose:()=>void; onConfirm:()=>void;
+function ReceiptModal({ cart, total, subtotal, payment, change, onClose, onConfirm, loading }:{
+  cart:CartItem[]; total:number; subtotal:number;
+  payment:PayMethod; change:number;
+  onClose:()=>void; onConfirm:()=>void; loading:boolean;
 }) {
   const now = new Date();
   return (
     <Modal open onClose={onClose} title="Receipt Preview" subtitle="Review before completing transaction" size="sm"
       footer={<>
-        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
+        <button onClick={onClose} disabled={loading} className="flex-1 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50"
           style={{border:`1px solid ${C.border}`,color:C.muted}}>Cancel</button>
-        <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90 flex items-center justify-center gap-2"
+        <button onClick={onConfirm} disabled={loading} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-60"
           style={{backgroundColor:C.green}}>
-          <Check size={14}/> Complete Transaction
+          <Check size={14}/> {loading ? "Processing…" : "Complete Transaction"}
         </button>
       </>}>
       <div className="space-y-4">
@@ -46,12 +45,6 @@ function ReceiptModal({ cart, total, tax, subtotal, payment, change, customer, o
             {now.toLocaleDateString("en-PH",{dateStyle:"full"})} · {now.toLocaleTimeString("en-PH",{timeStyle:"short"})}
           </div>
         </div>
-        {/* Customer */}
-        {customer && (
-          <div className="text-xs text-center" style={{color:C.muted}}>
-            Customer: <span className="font-semibold" style={{color:C.text}}>{customer}</span>
-          </div>
-        )}
         {/* Items */}
         <div className="space-y-1 py-3" style={{borderTop:`1px dashed ${C.border}`,borderBottom:`1px dashed ${C.border}`}}>
           {cart.map(item=>(
@@ -63,12 +56,10 @@ function ReceiptModal({ cart, total, tax, subtotal, payment, change, customer, o
         </div>
         {/* Totals */}
         <div className="space-y-1.5 text-xs">
-          {[["Subtotal",`₱${money(subtotal)}`],["Tax (12%)",`₱${money(tax)}`]].map(([l,v])=>(
-            <div key={l} className="flex justify-between">
-              <span style={{color:C.muted}}>{l}</span>
-              <span style={{color:C.text}}>{v}</span>
-            </div>
-          ))}
+          <div className="flex justify-between">
+            <span style={{color:C.muted}}>Subtotal</span>
+            <span style={{color:C.text}}>₱{money(subtotal)}</span>
+          </div>
           <div className="flex justify-between font-bold text-base pt-1" style={{borderTop:`1px solid ${C.border}`}}>
             <span style={{color:C.text}}>TOTAL</span>
             <span style={{color:C.blue}}>₱{money(total)}</span>
@@ -91,20 +82,19 @@ function ReceiptModal({ cart, total, tax, subtotal, payment, change, customer, o
 }
 
 // ─── Product Card ───────────────────────────────────────────────────────────────
-// Structured so the emoji block below can later be swapped for a product image
-// without touching the surrounding layout.
 function ProductCard({ prod, qtyInCart, onAdd }:{
   prod: InventoryItem; qtyInCart: number; onAdd: () => void;
 }) {
   const isLow = prod.stock > 0 && prod.stock <= LOW_STOCK_THRESHOLD;
   const isOut = prod.stock === 0;
+  const isMaxed = qtyInCart >= prod.stock;
 
   return (
     <button
       onClick={onAdd}
-      disabled={isOut}
+      disabled={isOut || isMaxed}
       className="relative flex flex-col bg-white rounded-2xl p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed"
-      style={{ border: `1px solid ${C.border}`, opacity: isOut ? 0.5 : 1, minHeight: 168 }}
+      style={{ border: `1px solid ${C.border}`, opacity: (isOut || isMaxed) ? 0.5 : 1, minHeight: 168 }}
     >
       {qtyInCart > 0 && (
         <div className="absolute top-3 right-3">
@@ -117,7 +107,6 @@ function ProductCard({ prod, qtyInCart, onAdd }:{
         </div>
       )}
 
-      {/* Icon slot — swap for <img> later without restructuring */}
       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl mb-3"
         style={{ backgroundColor: C.blue + "10" }}>
         {EMOJI[prod.cat] ?? "📦"}
@@ -159,35 +148,50 @@ function ProductCard({ prod, qtyInCart, onAdd }:{
 
 // ─── Main POS ─────────────────────────────────────────────────────────────────
 export function StaffPOS() {
+  const [products, setProducts] = useState<InventoryItem[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+
+  useEffect(() => {
+    setProductsLoading(true);
+    inventoryService.getAll()
+      .then(setProducts)
+      .catch(() => toast.error("Failed to load products."))
+      .finally(() => setProductsLoading(false));
+  }, []);
+
   const [cart,         setCart]       = useState<CartItem[]>([]);
   const [category,     setCategory]   = useState("All");
   const [search,       setSearch]     = useState("");
   const [payMethod,    setPayMethod]  = useState<PayMethod>("Cash");
   const [cashReceived, setCash]       = useState("");
-  const [customer,     setCustomer]   = useState("");
-  const [orderType,    setOrderType]  = useState<OrderType>("Walk-in");
   const [receiptOpen,  setReceiptOpen]= useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const categories = ["All",...Array.from(new Set(allInventory.map(p=>p.cat)))];
-  const filtered = allInventory.filter(p=>
+  const categories = ["All",...Array.from(new Set(products.map(p=>p.cat)))];
+  const filtered = products.filter(p=>
     (category==="All"||p.cat===category) && p.name.toLowerCase().includes(search.toLowerCase())
   );
 
   const addToCart = (prod:InventoryItem) => {
     setCart(prev=>{
       const ex = prev.find(i=>i.id===prod.id);
-      if (ex) return prev.map(i=>i.id===prod.id?{...i,qty:i.qty+1}:i);
-      return [...prev,{id:prod.id,name:prod.name,price:prod.price,qty:1}];
+      if (ex) {
+        if (ex.qty >= prod.stock) return prev;
+        return prev.map(i=>i.id===prod.id?{...i,qty:i.qty+1}:i);
+      }
+      return [...prev,{id:prod.id,name:prod.name,price:prod.price,qty:1,stock:prod.stock}];
     });
   };
   const updateQty = (id:number,delta:number) =>
-    setCart(prev=>prev.map(i=>i.id===id?{...i,qty:i.qty+delta}:i).filter(i=>i.qty>0));
+    setCart(prev=>prev.map(i=>{
+      if (i.id !== id) return i;
+      const nextQty = i.qty + delta;
+      return { ...i, qty: Math.min(nextQty, i.stock) };
+    }).filter(i=>i.qty>0));
 
-  // Decimal-precise math — no rounding until final display formatting
   const subtotal = cart.reduce((s,i)=>s + i.price * i.qty, 0);
-  const tax      = subtotal * TAX_RATE;
-  const total    = subtotal + tax;
+  const total    = subtotal; // no tax — matches backend, which applies no tax at all
   const cashValue = parseFloat(cashReceived);
   const change   = payMethod==="Cash" && cashReceived && !isNaN(cashValue)
     ? Math.max(0, cashValue - total)
@@ -195,22 +199,36 @@ export function StaffPOS() {
 
   const handleComplete = () => {
     if (cart.length===0) { toast.error("Cart is empty."); return; }
+    if (payMethod === "Cash" && (!cashReceived || isNaN(cashValue) || cashValue < total)) {
+      toast.error("Cash received must be at least the total amount.");
+      return;
+    }
     setReceiptOpen(true);
   };
 
   const handleConfirmTransaction = () => {
-    setReceiptOpen(false);
-    setCart([]);
-    setCash("");
-    setCustomer("");
-    toast.success(`Transaction complete! ₱${money(total)} received.`);
+    setSubmitting(true);
+    checkoutService.submit({
+      items: cart.map(i => ({ productId: i.id, quantity: i.qty })),
+      paymentMethod: payMethod,
+      amountTendered: payMethod === "Cash" ? cashValue : undefined,
+    })
+      .then((result) => {
+        setReceiptOpen(false);
+        setCart([]);
+        setCash("");
+        toast.success(`Transaction complete! ₱${money(result.totalAmount)} received.`);
+        // Refresh product stock after sale
+        inventoryService.getAll().then(setProducts).catch(() => {});
+      })
+      .catch((err: Error) => toast.error(err.message))
+      .finally(() => setSubmitting(false));
   };
 
   return (
     <div className="flex h-full w-full overflow-hidden" style={{ backgroundColor: "#F7F8FA" }}>
       {/* ── Left: Products ── */}
       <div className="flex-1 flex flex-col overflow-hidden p-6 gap-4 min-w-0">
-        {/* Search bar — pill shaped, taller, with focus animation */}
         <div
           className="flex items-center gap-3 bg-white rounded-full px-5 py-3.5 border transition-all duration-200"
           style={{
@@ -230,7 +248,6 @@ export function StaffPOS() {
           />
         </div>
 
-        {/* Category chips */}
         <div className="flex gap-2.5 flex-wrap">
           {categories.map(cat=>(
             <button key={cat} onClick={()=>setCategory(cat)}
@@ -242,29 +259,31 @@ export function StaffPOS() {
           ))}
         </div>
 
-        {/* Product grid — scrolls independently, scales columns to use full width */}
         <div className="flex-1 overflow-y-auto -mx-1 px-1 py-1">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-            {filtered.map(prod=>{
-              const inCart = cart.find(i=>i.id===prod.id);
-              return (
-                <ProductCard
-                  key={prod.id}
-                  prod={prod}
-                  qtyInCart={inCart?.qty ?? 0}
-                  onAdd={() => addToCart(prod)}
-                />
-              );
-            })}
-          </div>
+          {productsLoading ? (
+            <p className="text-sm text-center py-10" style={{color:C.muted}}>Loading products…</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+              {filtered.map(prod=>{
+                const inCart = cart.find(i=>i.id===prod.id);
+                return (
+                  <ProductCard
+                    key={prod.id}
+                    prod={prod}
+                    qtyInCart={inCart?.qty ?? 0}
+                    onAdd={() => addToCart(prod)}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Right: Cart (fixed panel, does not scroll as a whole) ── */}
+      {/* ── Right: Cart ── */}
       <div className="flex flex-col bg-white shadow-xl flex-shrink-0 h-full overflow-hidden"
         style={{width:360,borderLeft:`1px solid ${C.border}`}}>
 
-        {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between flex-shrink-0" style={{borderBottom:`1px solid ${C.border}`}}>
           <h3 className="font-bold text-base" style={{color:C.text,fontFamily:"Poppins,sans-serif"}}>Current Order</h3>
           {cart.length>0&&(
@@ -274,25 +293,6 @@ export function StaffPOS() {
           )}
         </div>
 
-        {/* Section: Customer Information */}
-        <div className="px-5 py-4 space-y-3 flex-shrink-0" style={{borderBottom:`1px solid ${C.border}`}}>
-          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Customer Information
-          </div>
-          <input className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none border"
-            placeholder="Customer name (optional)" value={customer}
-            onChange={e=>setCustomer(e.target.value)} style={{borderColor:C.border,color:C.text}}/>
-          <div className="flex gap-2">
-            {(["Walk-in","Pickup"] as OrderType[]).map(t=>(
-              <button key={t} onClick={()=>setOrderType(t)}
-                className="flex-1 py-2 rounded-xl text-xs font-medium transition-all"
-                style={{backgroundColor:orderType===t?C.navy:"transparent",color:orderType===t?"#fff":C.muted,
-                  border:`1px solid ${orderType===t?C.navy:C.border}`}}>{t}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Section: Order Items — the only scrollable part of the panel */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
           <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: C.muted }}>
             Order Items
@@ -318,8 +318,8 @@ export function StaffPOS() {
                       className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-gray-100 text-sm font-bold"
                       style={{border:`1px solid ${C.border}`,color:C.muted}}>−</button>
                     <span className="w-5 text-center text-xs font-bold" style={{color:C.text}}>{item.qty}</span>
-                    <button onClick={()=>updateQty(item.id,1)}
-                      className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-blue-50 text-sm font-bold"
+                    <button onClick={()=>updateQty(item.id,1)} disabled={item.qty >= item.stock}
+                      className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-blue-50 text-sm font-bold disabled:opacity-30"
                       style={{border:`1px solid ${C.border}`,color:C.blue}}>+</button>
                   </div>
                   <div className="text-xs font-bold w-16 text-right" style={{color:C.text}}>
@@ -331,21 +331,14 @@ export function StaffPOS() {
           )}
         </div>
 
-        {/* Section: Totals */}
         <div className="px-5 py-4 space-y-2 flex-shrink-0" style={{borderTop:`1px solid ${C.border}`}}>
-          {[["Subtotal",`₱${money(subtotal)}`],["Tax (12%)",`₱${money(tax)}`]].map(([l,v])=>(
-            <div key={l} className="flex justify-between text-xs" style={{color:C.muted}}>
-              <span>{l}</span><span>{v}</span>
-            </div>
-          ))}
           <div className="flex justify-between font-bold text-base pt-2"
-            style={{borderTop:`1px solid ${C.border}`,color:C.text}}>
+            style={{color:C.text}}>
             <span>Total</span>
             <span style={{color:C.blue}}>₱{money(total)}</span>
           </div>
         </div>
 
-        {/* Section: Payment */}
         <div className="px-5 pb-5 pt-1 space-y-3 flex-shrink-0">
           <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
             Payment Method
@@ -384,11 +377,10 @@ export function StaffPOS() {
         </div>
       </div>
 
-      {/* Receipt Preview Modal */}
       {receiptOpen&&(
-        <ReceiptModal cart={cart} total={total} tax={tax} subtotal={subtotal}
-          payment={payMethod} change={change} customer={customer || "Walk-in"}
-          onClose={()=>setReceiptOpen(false)} onConfirm={handleConfirmTransaction}/>
+        <ReceiptModal cart={cart} total={total} subtotal={subtotal}
+          payment={payMethod} change={change} loading={submitting}
+          onClose={()=>!submitting && setReceiptOpen(false)} onConfirm={handleConfirmTransaction}/>
       )}
     </div>
   );

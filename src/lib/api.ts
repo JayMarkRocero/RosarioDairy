@@ -114,6 +114,7 @@ export interface DjangoUserListItem {
   deactivation_reason: string;
   first_name: string;
   last_name: string;
+  last_login: string | null;
   phone_number?: string;
   address?: string;
 }
@@ -182,6 +183,42 @@ export interface CreateCustomerPayload {
 }
 
 export type UpdateCustomerPayload = Partial<CreateCustomerPayload>;
+
+export interface CheckoutItemPayload {
+  product_id: number;
+  quantity: number;
+}
+
+export interface CheckoutPayload {
+  items: CheckoutItemPayload[];
+  payment_method: "cash" | "online";
+  discount_type?: "none" | "percent" | "fixed";
+  discount_value?: number;
+  amount_tendered?: number;
+}
+
+export interface DjangoTransactionItem {
+  id: number;
+  product_batch: DjangoProductBatch;
+  quantity: number;
+  unit_price: string;
+}
+
+export interface DjangoTransaction {
+  id: number;
+  handled_by: CurrentUser;
+  subtotal: string;
+  discount_type: string;
+  discount_value: string;
+  discount_amount: string;
+  total_amount: string;
+  amount_tendered: string | null;
+  change_due: string | null;
+  payment_method: string;
+  delivery_status: string | null;
+  items: DjangoTransactionItem[];
+  created_at: string;
+}
 
 // ─── Error parsing helper ──────────────────────────────────────────────────────
 async function throwParsedError(res: Response): Promise<never> {
@@ -316,4 +353,17 @@ fulfillOrder: (id: number, paymentMethod: string) =>
   apiPost<DjangoOrder>(`/sales/orders/${id}/fulfill/`, { payment_method: paymentMethod }),
 cancelOrder: (id: number) =>
   apiPost<DjangoOrder>(`/sales/orders/${id}/cancel/`, {}),
+
+checkout: (data: CheckoutPayload) =>
+  apiPost<DjangoTransaction>('/sales/checkout/', data),
+
+getTransactions: (params?: { start_date?: string; end_date?: string; payment_method?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.start_date) query.set('start_date', params.start_date);
+  if (params?.end_date) query.set('end_date', params.end_date);
+  if (params?.payment_method) query.set('payment_method', params.payment_method);
+  const qs = query.toString();
+  return apiFetch<DjangoTransaction[]>(`/sales/transactions/${qs ? `?${qs}` : ''}`);
+},
+
 };

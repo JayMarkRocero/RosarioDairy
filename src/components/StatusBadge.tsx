@@ -9,9 +9,11 @@ const statusMap: Record<string, { bg: string; color: string }> = {
   Active:     { bg: "#E8F5E9", color: C.green  },
   Inactive:   { bg: "#F5F5F5", color: C.muted  },
   Low:        { bg: "#FFF3E0", color: C.orange },
+  Expired:      { bg: "#FFEBEE", color: C.red     },
+  "Near Expiry": { bg: "#FFFDE7", color: "#F59E0B" },
   Critical:   { bg: "#FFEBEE", color: C.red    },
   High:       { bg: "#FFF3E0", color: C.orange },
-  Medium:     { bg: "#FFFDE7", color: "#F59E0B" },
+  Medium:     { bg: "#FFFDE7", color: "#ffff05" },
 };
 
 interface Props {
